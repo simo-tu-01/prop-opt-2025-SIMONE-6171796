@@ -281,7 +281,7 @@ def generate_benchmarks(benchmark_step_size,
     """
     ### CREATION OF THE TWO BENCHMARKS ###
     # Define benchmarks' step sizes
-    first_benchmark_step_size = 2.0  # s
+    first_benchmark_step_size = benchmark_step_size  # s
     second_benchmark_step_size = 2.0 * first_benchmark_step_size
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator

@@ -189,7 +189,8 @@ def get_integrator_settings(propagator_index: int,
 
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
-def generate_benchmarks(simulation_start_epoch: float,
+def generate_benchmarks(benchmark_step_size: float,
+			simulation_start_epoch: float,
                         specific_impulse: float,
                         minimum_mars_distance: float,
                         time_buffer: float,
@@ -238,7 +239,7 @@ def generate_benchmarks(simulation_start_epoch: float,
     """
     ### CREATION OF THE TWO BENCHMARKS ###
     # Define benchmarks' step sizes
-    first_benchmark_step_size = constants.JULIAN_DAY  # s
+    first_benchmark_step_size = benchmark_step_size  
     second_benchmark_step_size = 2.0 * first_benchmark_step_size
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator

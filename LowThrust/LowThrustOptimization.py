@@ -275,7 +275,9 @@ if use_benchmark:
     else:
         benchmark_output_path = None
     # Generate benchmarks
-    benchmark_list = Util.generate_benchmarks(initial_propagation_time,
+    benchmark_step_size = 86400.0
+    benchmark_list = Util.generate_benchmarks(benchmark_step_size,
+                                              initial_propagation_time,
                                               specific_impulse,
                                               minimum_mars_distance,
                                               time_buffer,

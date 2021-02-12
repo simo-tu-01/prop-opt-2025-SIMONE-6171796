@@ -270,7 +270,9 @@ if use_benchmark:
     else:
         benchmark_output_path = None
     # Generate benchmarks
-    benchmark_list = Util.generate_benchmarks(simulation_start_epoch,
+    benchmark_step_size = 1.0
+    benchmark_list = Util.generate_benchmarks(benchmark_step_size,
+						      simulation_start_epoch,
                                                       constant_specific_impulse,
                                                       bodies,
                                                       benchmark_propagator_settings,
