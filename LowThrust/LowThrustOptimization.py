@@ -45,7 +45,10 @@ the vector trajectory_parameters.
 The entries of the vector 'trajectoryParameters' contains the following:
 * Entry 0: Departure time (from Earth's center-of-mass) in Julian days since J2000
 * Entry 1: Time-of-flight from Earth's center-of-mass to Mars' center-of-mass, in Julian days
-* Entry 2-6: Thrust angle theta, at nodes 1-5 (in order)
+* Entry 2: Number of revolutions
+* Entry 3,4: Free parameters for radial shaping functions
+* Entry 5,6: Free parameters for normal shaping functions
+* Entry 7,8: Free parameters for axial shaping functions
   
 Details on the outputs written by this file can be found:
 * Benchmark data: comments for 'generate_benchmarks()' and 'compare_benchmarks()' function
@@ -136,7 +139,10 @@ import LowThrustUtilities as Util
 # Load spice kernels
 spice_interface.load_standard_kernels()
 # NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
-# ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER
+# ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER.
+# CONSIDER ALL PARAMETERS FROM YOUR SPECIFIC INPUT NUMBER, EVEN IF THE
+# SIZE OF THE NEW LIST trajectory_parameters WILL BE DIFFERENT FROM THE
+# SIZE OF THE ONE REPORTED BELOW. THIS IS ALREADY ACCOUNTED FOR IN THE CODE.
 trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
                          37073942.58665284 / constants.JULIAN_DAY,
                          0,
