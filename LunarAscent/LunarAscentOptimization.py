@@ -396,7 +396,7 @@ for propagator_index in range(number_of_propagators):
 
             ### OUTPUT OF THE SIMULATION ###
             # Retrieve propagated state and dependent variables
-            state_history = current_lunar_ascent_problem.get_last_run_propagated_state_history()
+            state_history = current_lunar_ascent_problem.get_last_run_propagated_cartesian_state_history()
             dependent_variable_history = current_lunar_ascent_problem.get_last_run_dependent_variable_history()
 
             # Get the number of function evaluations (for comparison of different integrators)
