@@ -438,7 +438,7 @@ for propagator_index in range(number_of_propagators):
             # Get the number of function evaluations (for comparison of different integrators)
             dynamics_simulator = current_low_thrust_problem.get_last_run_dynamics_simulator()
             function_evaluation_dict = dynamics_simulator.get_cumulative_number_of_function_evaluations()
-            number_of_function_evaluations = list(function_evaluation_dict)[-1]
+            number_of_function_evaluations = list(function_evaluation_dict.values())[-1]
             # Add it to a dictionary
             dict_to_write = {'Number of function evaluations (ignore the line above)': number_of_function_evaluations}
             # Check if the propagation was run successfully
