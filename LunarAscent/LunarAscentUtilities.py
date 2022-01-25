@@ -30,12 +30,12 @@ from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
 from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.numerical_simulation import environment
+from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.astro import element_conversion
-from tudatpy.kernel.astro import frame_conversion
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-from LunarAscentProblem import LunarAscentProblem, get_thrust_acceleration_model_from_parameters
+from LunarAscentProblem import get_thrust_acceleration_model_from_parameters
 
 ###########################################################################
 # USEFUL FUNCTIONS ########################################################
@@ -74,7 +74,7 @@ def get_initial_state(simulation_start_epoch: float,
     # velocity (m/s)
     speed = 10.0
     # flight path angle (rad)
-    flight_path_angle = np.deg2rad(90.0)
+    flight_path_angle = np.deg2rad(89.0)
     # heading angle (rad)
     heading_angle = np.deg2rad(90.0)
     # Convert spherical elements to body-fixed cartesian coordinates
@@ -84,8 +84,8 @@ def get_initial_state(simulation_start_epoch: float,
     moon_rotational_model = bodies.get_body('Moon').rotation_model
     # Transform the state to the global (inertial) frame
     initial_state_inertial_coordinates = environment.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
-                                                                                      simulation_start_epoch,
-                                                                                      moon_rotational_model)
+                                                                                       simulation_start_epoch,
+                                                                                       moon_rotational_model)
     return initial_state_inertial_coordinates
 
 
@@ -237,12 +237,13 @@ def get_integrator_settings(propagator_index: int,
         # Here (epsilon, inf) are set as respectively min and max step sizes
         # also note that the relative and absolute tolerances are the same value
         integrator_settings = integrator.runge_kutta_variable_step_size(simulation_start_epoch,
-                                                                                          1.0,
-                                                                                          current_coefficient_set,
-                                                                                          np.finfo(float).eps,
-                                                                                          np.inf,
-                                                                                          current_tolerance,
-                                                                                          current_tolerance)
+                                                                        1.0,
+                                                                        current_coefficient_set,
+                                                                        1.0E-2,
+                                                                        np.inf,
+                                                                        current_tolerance,
+                                                                        current_tolerance,
+                                                                        throw_exception_if_minimum_step_exceeded = False )
     # Use fixed step-size integrator
     else:
         # Compute time step
@@ -258,7 +259,11 @@ def get_propagator_settings(thrust_parameters,
                             bodies,
                             simulation_start_epoch,
                             constant_specific_impulse,
-                            vehicle_initial_mass ):
+                            vehicle_initial_mass,
+                            termination_settings,
+                            dependent_variables_to_save,
+                            current_propagator = propagation_setup.propagator.cowell ):
+
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Moon']
 
@@ -281,35 +286,45 @@ def get_propagator_settings(thrust_parameters,
     # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
     ###########################################################################
 
-    # Retrieve termination settings
-    termination_settings = get_termination_settings(simulation_start_epoch,
-                                                         maximum_duration,
-                                                         termination_altitude,
-                                                         vehicle_dry_mass)
-    # Retrieve dependent variables to save
-    dependent_variables_to_save = get_dependent_variable_save_settings()
-    # Check whether there is any
-    if not dependent_variables_to_save:
-        are_dependent_variables_to_save = False
-    else:
-        are_dependent_variables_to_save = True
     # Retrieve initial state
     initial_state = get_initial_state(simulation_start_epoch,
-                                           bodies)
+                                      bodies)
     # Create mass rate model
     mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass_rate.from_thrust()]}
     mass_rate_models = propagation_setup.create_mass_rate_models(bodies,
                                                                  mass_rate_settings_on_vehicle,
                                                                  acceleration_models)
+
     # Create mass propagator settings (same for all propagations)
     mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
                                                                  mass_rate_models,
                                                                  np.array([vehicle_initial_mass]),
                                                                  termination_settings)
 
+    # Create propagation settings for the benchmark
+    translational_propagator_settings = propagation_setup.propagator.translational(
+        central_bodies,
+        acceleration_models,
+        bodies_to_propagate,
+        initial_state,
+        termination_settings,
+        current_propagator,
+        output_variables=dependent_variables_to_save)
+
+    # Create multi-type propagation settings list
+    propagator_settings_list = [translational_propagator_settings,
+                                mass_propagator_settings]
+
+    # Create multi-type propagation settings object
+    propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
+                                                                 termination_settings,
+                                                                 dependent_variables_to_save)
+
+    return propagator_settings
+
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
-			simulation_start_epoch: float,
+                        simulation_start_epoch: float,
                         specific_impulse: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
@@ -363,15 +378,11 @@ def generate_benchmarks(benchmark_step_size: float,
         first_benchmark_step_size,
         np.inf,
         np.inf)
-    # Create Lunar Ascent Problem object for first benchmark
-    first_benchmark = LunarAscentProblem(bodies,
-                                         benchmark_integrator_settings,
-                                         benchmark_propagator_settings,
-                                         specific_impulse,
-                                         simulation_start_epoch)
+
     print('Running first benchmark...')
-    # Set new thrust parameters and evaluate fitness
-    first_benchmark.fitness(thrust_parameters)
+    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(bodies,
+                                                                       benchmark_integrator_settings,
+                                                                       benchmark_propagator_settings, print_dependent_variable_data=True)
 
     # Create integrator settings for the second benchmark in the same way
     benchmark_integrator = propagation_setup.integrator
@@ -383,20 +394,16 @@ def generate_benchmarks(benchmark_step_size: float,
         second_benchmark_step_size,
         np.inf,
         np.inf)
-    # Create Lunar Ascent Problem object for second benchmark
-    second_benchmark = LunarAscentProblem(bodies,
-                                          benchmark_integrator_settings,
-                                          benchmark_propagator_settings,
-                                          specific_impulse,
-                                          simulation_start_epoch)
+
     print('Running second benchmark...')
-    # Set new thrust parameters and evaluate fitness
-    second_benchmark.fitness(thrust_parameters)
+    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(bodies,
+                                                                        benchmark_integrator_settings,
+                                                                        benchmark_propagator_settings, print_dependent_variable_data=False)
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
     # Retrieve state history
-    first_benchmark_states = first_benchmark.get_last_run_propagated_state_history()
-    second_benchmark_states = second_benchmark.get_last_run_propagated_state_history()
+    first_benchmark_states = first_dynamics_simulator.state_history
+    second_benchmark_states = second_dynamics_simulator.state_history
     # Write results to files
     if output_path is not None:
         save2txt(first_benchmark_states, 'benchmark_1_states.dat', output_path)
@@ -408,8 +415,8 @@ def generate_benchmarks(benchmark_step_size: float,
     ### DO THE SAME FOR DEPENDENT VARIABLES ###
     if are_dependent_variables_present:
         # Retrieve dependent variable history
-        first_benchmark_dependent_variable = first_benchmark.get_last_run_dependent_variable_history()
-        second_benchmark_dependent_variable = second_benchmark.get_last_run_dependent_variable_history()
+        first_benchmark_dependent_variable = first_dynamics_simulator.dependent_variable_history
+        second_benchmark_dependent_variable = second_dynamics_simulator.dependent_variable_history
         # Write results to file
         if output_path is not None:
             save2txt(first_benchmark_dependent_variable, 'benchmark_1_dependent_variables.dat',  output_path)
@@ -450,7 +457,7 @@ def compare_benchmarks(first_benchmark: dict,
     """
     # Create 8th-order Lagrange interpolator for first benchmark
     benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
-                                                                               interpolators.lagrange_interpolation(8))
+                                                                                      interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')
     # Initialize difference dictionaries
@@ -458,7 +465,7 @@ def compare_benchmarks(first_benchmark: dict,
     # Calculate the difference between the states and dependent variables in an iterative manner
     for second_epoch in second_benchmark.keys():
         benchmark_difference[second_epoch] = benchmark_interpolator.interpolate(second_epoch) - \
-                                         second_benchmark[second_epoch]
+                                             second_benchmark[second_epoch]
     # Write results to files
     if output_path is not None:
         save2txt(benchmark_difference, filename, output_path)
