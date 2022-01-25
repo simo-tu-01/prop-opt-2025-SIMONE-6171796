@@ -240,166 +240,166 @@ class CapsuleAerodynamicGuidance(propagation.AerodynamicGuidance):
         self.angle_of_attack = self.fixed_angle_of_attack
         self.bank_angle = 0.0
         self.sideslip_angle = 0.0
-
-###########################################################################
-# CREATE PROBLEM CLASS ####################################################
-###########################################################################
-
-class ShapeOptimizationProblem:
-    """
-    Class to initialize, simulate and optimize the Shape Optimization problem.
-
-    The class is created specifically for this problem. This is done to provide better integration with Pagmo/Pygmo,
-    where the optimization process (assignment 3) will be done. For the first two assignments, the presence of this
-    class is not strictly needed, but it was chosen to create the code so that the same version could be used for all
-    three assignments.
-
-    Attributes
-    ----------
-    bodies
-    integrator_settings
-    propagator_settings
-    capsule_density
-
-    Methods
-    -------
-    get_last_run_propagated_state_history()
-    get_last_run_dependent_variable_history()
-    get_last_run_dynamics_simulator()
-    fitness(shape_parameters)
-    """
-
-    def __init__(self,
-                 bodies,
-                 integrator_settings,
-                 propagator_settings,
-                 capsule_density):
-        """
-        Constructor for the ShapeOptimizationProblem class.
-
-        Parameters
-        ----------
-        bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
-            System of bodies present in the simulation.
-        integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
-            Integrator settings to be provided to the dynamics simulator.
-        propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings
-            Propagator settings object.
-        capsule_density : float
-            Constant density of the vehicle.
-
-        Returns
-        -------
-        none
-        """
-        # Set arguments as attributes
-        self.bodies = bodies
-        self.integrator_settings = integrator_settings
-        self.propagator_settings = propagator_settings
-        self.capsule_density = capsule_density
-
-    def get_last_run_propagated_cartesian_state_history(self) -> dict:
-        """
-        Returns the full history of the propagated state, converted to Cartesian states
-
-        Parameters
-        ----------
-        none
-
-        Returns
-        -------
-        dict
-        """
-        return self.dynamics_simulator.state_history
-
-    def get_last_run_propagated_state_history(self) -> dict:
-        """
-        Returns the full history of the propagated state, not converted to Cartesian state
-        (i.e. in the actual formulation that was used during the numerical integration).
-
-        Parameters
-        ----------
-        none
-
-        Returns
-        -------
-        dict
-        """
-        return self.dynamics_simulator.unprocessed_state_history
-
-    def get_last_run_dependent_variable_history(self) -> dict:
-        """
-        Returns the full history of the dependent variables.
-
-        Parameters
-        ----------
-        none
-
-        Returns
-        -------
-        dict
-        """
-        return self.dynamics_simulator.dependent_variable_history
-
-    def get_last_run_dynamics_simulator(self):
-        """
-        Returns the dynamics simulator object.
-
-        Parameters
-        ----------
-        none
-
-        Returns
-        -------
-        tudatpy.kernel.numerical_simulation.SingleArcSimulator
-        """
-        return self.dynamics_simulator
-
-    def fitness(self,
-                shape_parameters):
-        """
-        Propagates the trajectory with the shape parameters given as argument.
-
-        This function uses the shape parameters to set a new aerodynamic coefficient interface, subsequently propagating
-        the trajectory. The fitness, currently set to zero, can be computed here: it will be used during the
-        optimization process.
-
-        Parameters
-        ----------
-        shape_parameters : list of floats
-            List of shape parameters to be optimized.
-
-        Returns
-        -------
-        fitness : float
-            Fitness value (for optimization, see assignment 3).
-        """
-
-        # Delete existing capsule
-        #TODO self.bodies.remove_body('Capsule')
-        # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
-        #TODO  add_capsule_to_body_system(self.bodies,
-        #                           shape_parameters,
-        #                           self.capsule_density)
-
-        # Update propagation model with new body shape
-        #self.propagator_settings.recreate_state_derivative_models(self.bodies)
-
-        # Create new aerodynamic guidance
-        guidance_object = CapsuleAerodynamicGuidance(self.bodies,
-                                                     shape_parameters[5])
-        # Set aerodynamic guidance (this line links the CapsuleAerodynamicGuidance settings with the propagation)
-        environment_setup.set_aerodynamic_guidance(guidance_object,
-                                                   self.bodies.get_body('Capsule'),
-                                                   silence_warnings=True)
-
-        # Create simulation object and propagate dynamics
-        self.dynamics_simulator = numerical_simulation.SingleArcSimulator(
-            self.bodies,
-            self.integrator_settings,
-            self.propagator_settings,
-            print_dependent_variable_data=False )
-
-        # For the first two assignments, no computation of fitness is needed
-        fitness = 0.0
-        return fitness
+#
+# ###########################################################################
+# # CREATE PROBLEM CLASS ####################################################
+# ###########################################################################
+#
+# class ShapeOptimizationProblem:
+#     """
+#     Class to initialize, simulate and optimize the Shape Optimization problem.
+#
+#     The class is created specifically for this problem. This is done to provide better integration with Pagmo/Pygmo,
+#     where the optimization process (assignment 3) will be done. For the first two assignments, the presence of this
+#     class is not strictly needed, but it was chosen to create the code so that the same version could be used for all
+#     three assignments.
+#
+#     Attributes
+#     ----------
+#     bodies
+#     integrator_settings
+#     propagator_settings
+#     capsule_density
+#
+#     Methods
+#     -------
+#     get_last_run_propagated_state_history()
+#     get_last_run_dependent_variable_history()
+#     get_last_run_dynamics_simulator()
+#     fitness(shape_parameters)
+#     """
+#
+#     def __init__(self,
+#                  bodies,
+#                  integrator_settings,
+#                  propagator_settings,
+#                  capsule_density):
+#         """
+#         Constructor for the ShapeOptimizationProblem class.
+#
+#         Parameters
+#         ----------
+#         bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+#             System of bodies present in the simulation.
+#         integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
+#             Integrator settings to be provided to the dynamics simulator.
+#         propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings
+#             Propagator settings object.
+#         capsule_density : float
+#             Constant density of the vehicle.
+#
+#         Returns
+#         -------
+#         none
+#         """
+#         # Set arguments as attributes
+#         self.bodies = bodies
+#         self.integrator_settings = integrator_settings
+#         self.propagator_settings = propagator_settings
+#         self.capsule_density = capsule_density
+#
+#     def get_last_run_propagated_cartesian_state_history(self) -> dict:
+#         """
+#         Returns the full history of the propagated state, converted to Cartesian states
+#
+#         Parameters
+#         ----------
+#         none
+#
+#         Returns
+#         -------
+#         dict
+#         """
+#         return self.dynamics_simulator.state_history
+#
+#     def get_last_run_propagated_state_history(self) -> dict:
+#         """
+#         Returns the full history of the propagated state, not converted to Cartesian state
+#         (i.e. in the actual formulation that was used during the numerical integration).
+#
+#         Parameters
+#         ----------
+#         none
+#
+#         Returns
+#         -------
+#         dict
+#         """
+#         return self.dynamics_simulator.unprocessed_state_history
+#
+#     def get_last_run_dependent_variable_history(self) -> dict:
+#         """
+#         Returns the full history of the dependent variables.
+#
+#         Parameters
+#         ----------
+#         none
+#
+#         Returns
+#         -------
+#         dict
+#         """
+#         return self.dynamics_simulator.dependent_variable_history
+#
+#     def get_last_run_dynamics_simulator(self):
+#         """
+#         Returns the dynamics simulator object.
+#
+#         Parameters
+#         ----------
+#         none
+#
+#         Returns
+#         -------
+#         tudatpy.kernel.numerical_simulation.SingleArcSimulator
+#         """
+#         return self.dynamics_simulator
+#
+#     def fitness(self,
+#                 shape_parameters):
+#         """
+#         Propagates the trajectory with the shape parameters given as argument.
+#
+#         This function uses the shape parameters to set a new aerodynamic coefficient interface, subsequently propagating
+#         the trajectory. The fitness, currently set to zero, can be computed here: it will be used during the
+#         optimization process.
+#
+#         Parameters
+#         ----------
+#         shape_parameters : list of floats
+#             List of shape parameters to be optimized.
+#
+#         Returns
+#         -------
+#         fitness : float
+#             Fitness value (for optimization, see assignment 3).
+#         """
+#
+#         # Delete existing capsule
+#         #TODO self.bodies.remove_body('Capsule')
+#         # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
+#         #TODO  add_capsule_to_body_system(self.bodies,
+#         #                           shape_parameters,
+#         #                           self.capsule_density)
+#
+#         # Update propagation model with new body shape
+#         #self.propagator_settings.recreate_state_derivative_models(self.bodies)
+#
+#         # Create new aerodynamic guidance
+#         guidance_object = CapsuleAerodynamicGuidance(self.bodies,
+#                                                      shape_parameters[5])
+#         # Set aerodynamic guidance (this line links the CapsuleAerodynamicGuidance settings with the propagation)
+#         environment_setup.set_aerodynamic_guidance(guidance_object,
+#                                                    self.bodies.get_body('Capsule'),
+#                                                    silence_warnings=True)
+#
+#         # Create simulation object and propagate dynamics
+#         self.dynamics_simulator = numerical_simulation.SingleArcSimulator(
+#             self.bodies,
+#             self.integrator_settings,
+#             self.propagator_settings,
+#             print_dependent_variable_data=False )
+#
+#         # For the first two assignments, no computation of fitness is needed
+#         fitness = 0.0
+#         return fitness

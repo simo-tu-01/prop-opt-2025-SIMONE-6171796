@@ -29,12 +29,12 @@ import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
+from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.numerical_simulation import environment
+from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.astro import element_conversion
 from tudatpy.kernel.math import interpolators
-# Problem-specific imports
-from ShapeOptimizationProblem import ShapeOptimizationProblem
 
 ###########################################################################
 # USEFUL FUNCTIONS ########################################################
@@ -64,17 +64,11 @@ def get_initial_state(simulation_start_epoch: float,
         The initial state of the vehicle expressed in inertial coordinates.
     """
     # Set initial spherical elements
-    # position vector (m)
     radial_distance = spice_interface.get_average_radius('Earth') + 120.0E3
-    # latitude (rad)
     latitude = np.deg2rad(0.0)
-    # longitude (rad)
     longitude = np.deg2rad(68.75)
-    # velocity (m/s)
     speed = 7.83E3
-    # flight path angle (rad)
     flight_path_angle = np.deg2rad(-1.5)
-    # heading angle (rad)
     heading_angle = np.deg2rad(34.37)
 
     # Convert spherical elements to body-fixed cartesian coordinates
@@ -83,9 +77,11 @@ def get_initial_state(simulation_start_epoch: float,
     # Get rotational ephemerides of the Earth
     earth_rotational_model = bodies.get_body('Earth').rotation_model
     # Transform the state to the global (inertial) frame
-    initial_cartesian_state_inertial = environment.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
-                                                                                      simulation_start_epoch,
-                                                                                      earth_rotational_model)
+    initial_cartesian_state_inertial = environment.transform_to_inertial_orientation(
+        initial_cartesian_state_body_fixed,
+        simulation_start_epoch,
+        earth_rotational_model)
+
     return initial_cartesian_state_inertial
 
 def get_termination_settings(simulation_start_epoch: float,
@@ -216,13 +212,14 @@ def get_integrator_settings(propagator_index: int,
         integrator = propagation_setup.integrator
         # Here (epsilon, inf) are set as respectively min and max step sizes
         # also note that the relative and absolute tolerances are the same value
-        integrator_settings = integrator.runge_kutta_variable_step_size(simulation_start_epoch,
-                                                                                          1.0,
-                                                                                          current_coefficient_set,
-                                                                                          np.finfo(float).eps,
-                                                                                          np.inf,
-                                                                                          current_tolerance,
-                                                                                          current_tolerance)
+        integrator_settings = integrator.runge_kutta_variable_step_size(
+            simulation_start_epoch,
+            1.0,
+            current_coefficient_set,
+            np.finfo(float).eps,
+            np.inf,
+            current_tolerance,
+            current_tolerance)
     # Use fixed step-size integrator
     else:
         # Compute time step
@@ -234,14 +231,53 @@ def get_integrator_settings(propagator_index: int,
     return integrator_settings
 
 
+def get_propagator_settings(shape_parameters,
+                            bodies,
+                            simulation_start_epoch,
+                            termination_settings,
+                            dependent_variables_to_save,
+                            current_propagator = propagation_setup.propagator.cowell ):
+
+    # Define bodies that are propagated and their central bodies of propagation
+    bodies_to_propagate = ['Capsule']
+    central_bodies = ['Earth']
+
+    # Define accelerations acting on capsule
+    acceleration_settings_on_vehicle = {
+        'Earth': [propagation_setup.acceleration.point_mass_gravity(),
+                  propagation_setup.acceleration.aerodynamic()]
+    }
+    # Create acceleration models.
+    acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
+    acceleration_models = propagation_setup.create_acceleration_models(
+        bodies,
+        acceleration_settings,
+        bodies_to_propagate,
+        central_bodies)
+
+    # Set vehicle body orientation (constant angle of attack, zero sideslip and bank angle)
+    environment_setup.set_constant_aerodynamic_orientation(
+        bodies.get_body('Capsule'),shape_parameters[5], 0.0, 0.0,
+        silence_warnings=True )
+
+    # Retrieve initial state
+    initial_state = get_initial_state(simulation_start_epoch,bodies)
+
+    # Create propagation settings for the benchmark
+    propagator_settings = propagation_setup.propagator.translational(central_bodies,
+                                                                     acceleration_models,
+                                                                     bodies_to_propagate,
+                                                                     initial_state,
+                                                                     termination_settings,
+                                                                     current_propagator,
+                                                                     output_variables=dependent_variables_to_save)
+    return propagator_settings
+
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size,
                         simulation_start_epoch: float,
-                        specific_impulse: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                        benchmark_propagator_settings:
-                        tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
-                        thrust_parameters: list,
+                        benchmark_propagator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalStatePropagatorSettings,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
     """
@@ -257,14 +293,13 @@ def generate_benchmarks(benchmark_step_size,
 
     Parameters
     ----------
-    simulation_start_epoch : float
-        The start time of the simulation in seconds.
+    benchmark_step_size : float
+        Time step of the benchmark that will be used. Two benchmark simulations will be run, both fixed-step 8th order
+         (first benchmark uses benchmark_step_size, second benchmark uses 2.0 * benchmark_step_size)
     bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
         System of bodies present in the simulation.
     benchmark_propagator_settings
         Propagator settings object which is used to run the benchmark propagations.
-    thrust_parameters
-        List that represents the thrust parameters for the spacecraft.
     are_dependent_variables_present : bool
         If there are dependent variables to save.
     output_path : str (default: None)
@@ -275,6 +310,7 @@ def generate_benchmarks(benchmark_step_size,
     return_list : list
         List of state and dependent variable history in this order: state_1, state_2, dependent_1_ dependent_2.
     """
+
     ### CREATION OF THE TWO BENCHMARKS ###
     # Define benchmarks' step sizes
     first_benchmark_step_size = benchmark_step_size  # s
@@ -282,8 +318,7 @@ def generate_benchmarks(benchmark_step_size,
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
-    benchmark_integrator = propagation_setup.integrator
-    benchmark_integrator_settings = benchmark_integrator.runge_kutta_variable_step_size(
+    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         first_benchmark_step_size,
         propagation_setup.integrator.RKCoefficientSets.rkdp_87,
@@ -292,18 +327,14 @@ def generate_benchmarks(benchmark_step_size,
         np.inf,
         np.inf)
 
-    # Create Shape Optimization Problem object for first benchmark
-    first_benchmark = ShapeOptimizationProblem(bodies,
-                                               benchmark_integrator_settings,
-                                               benchmark_propagator_settings,
-                                               specific_impulse)
     print('Running first benchmark...')
-    # Set new thrust parameters and evaluate fitness
-    first_benchmark.fitness(thrust_parameters)
+    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        bodies,
+        benchmark_integrator_settings,
+        benchmark_propagator_settings, print_dependent_variable_data=True)
 
     # Create integrator settings for the second benchmark in the same way
-    benchmark_integrator = propagation_setup.integrator
-    benchmark_integrator_settings = benchmark_integrator.runge_kutta_variable_step_size(
+    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         second_benchmark_step_size,
         propagation_setup.integrator.RKCoefficientSets.rkdp_87,
@@ -312,19 +343,17 @@ def generate_benchmarks(benchmark_step_size,
         np.inf,
         np.inf)
 
-    # Create Shape Optimization Problem object for second benchmark
-    second_benchmark = ShapeOptimizationProblem(bodies,
-                                                benchmark_integrator_settings,
-                                                benchmark_propagator_settings,
-                                                specific_impulse)
     print('Running second benchmark...')
-    # Set new thrust parameters and evaluate fitness
-    second_benchmark.fitness(thrust_parameters)
+    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        bodies,
+        benchmark_integrator_settings,
+        benchmark_propagator_settings, print_dependent_variable_data=False)
+
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
     # Retrieve state history
-    first_benchmark_states = first_benchmark.get_last_run_propagated_state_history()
-    second_benchmark_states = second_benchmark.get_last_run_propagated_state_history()
+    first_benchmark_states = first_dynamics_simulator.state_history
+    second_benchmark_states = second_dynamics_simulator.state_history
     # Write results to files
     if output_path is not None:
         save2txt(first_benchmark_states, 'benchmark_1_states.dat', output_path)
@@ -336,8 +365,8 @@ def generate_benchmarks(benchmark_step_size,
     ### DO THE SAME FOR DEPENDENT VARIABLES ###
     if are_dependent_variables_present:
         # Retrieve dependent variable history
-        first_benchmark_dependent_variable = first_benchmark.get_last_run_dependent_variable_history()
-        second_benchmark_dependent_variable = second_benchmark.get_last_run_dependent_variable_history()
+        first_benchmark_dependent_variable = first_dynamics_simulator.dependent_variable_history
+        second_benchmark_dependent_variable = second_dynamics_simulator.dependent_variable_history
         # Write results to file
         if output_path is not None:
             save2txt(first_benchmark_dependent_variable, 'benchmark_1_dependent_variables.dat',  output_path)
@@ -377,8 +406,8 @@ def compare_benchmarks(first_benchmark: dict,
         Interpolated difference between the two benchmarks' state (or dependent variable) history.
     """
     # Create 8th-order Lagrange interpolator for first benchmark
-    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
-                                                                               interpolators.lagrange_interpolation(8))
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        first_benchmark, interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')
     # Initialize difference dictionaries
@@ -389,8 +418,6 @@ def compare_benchmarks(first_benchmark: dict,
                                          second_benchmark[second_epoch]
     # Write results to files
     if output_path is not None:
-        save2txt(benchmark_difference,
-                 filename,
-                 output_path)
+        save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference

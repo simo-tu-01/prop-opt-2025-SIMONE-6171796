@@ -64,28 +64,25 @@ def get_initial_state(simulation_start_epoch: float,
     initial_state_inertial_coordinates : np.ndarray
         The initial state of the vehicle expressed in inertial coordinates.
     """
-    # Set initial spherical elements
-    # position vector (m)
+    # Set initial spherical elements.
     radius = spice_interface.get_average_radius('Moon') + 100.0
-    # latitude (rad)
     latitude = np.deg2rad(0.6875)
-    # longitude (rad)
     longitude = np.deg2rad(23.4333)
-    # velocity (m/s)
     speed = 10.0
-    # flight path angle (rad)
     flight_path_angle = np.deg2rad(89.0)
-    # heading angle (rad)
     heading_angle = np.deg2rad(90.0)
+
     # Convert spherical elements to body-fixed cartesian coordinates
     initial_cartesian_state_body_fixed = element_conversion.spherical_to_cartesian_elementwise(
         radius, latitude,  longitude, speed, flight_path_angle, heading_angle)
     # Get rotational ephemerides of the Moon
     moon_rotational_model = bodies.get_body('Moon').rotation_model
     # Transform the state to the global (inertial) frame
-    initial_state_inertial_coordinates = environment.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
-                                                                                       simulation_start_epoch,
-                                                                                       moon_rotational_model)
+    initial_state_inertial_coordinates = environment.transform_to_inertial_orientation(
+        initial_cartesian_state_body_fixed,
+        simulation_start_epoch,
+        moon_rotational_model)
+
     return initial_state_inertial_coordinates
 
 
@@ -236,14 +233,15 @@ def get_integrator_settings(propagator_index: int,
         integrator = propagation_setup.integrator
         # Here (epsilon, inf) are set as respectively min and max step sizes
         # also note that the relative and absolute tolerances are the same value
-        integrator_settings = integrator.runge_kutta_variable_step_size(simulation_start_epoch,
-                                                                        1.0,
-                                                                        current_coefficient_set,
-                                                                        1.0E-2,
-                                                                        np.inf,
-                                                                        current_tolerance,
-                                                                        current_tolerance,
-                                                                        throw_exception_if_minimum_step_exceeded = False )
+        integrator_settings = integrator.runge_kutta_variable_step_size(
+            simulation_start_epoch,
+            1.0,
+            current_coefficient_set,
+            1.0E-2,
+            np.inf,
+            current_tolerance,
+            current_tolerance,
+            throw_exception_if_minimum_step_exceeded = False )
     # Use fixed step-size integrator
     else:
         # Compute time step
@@ -264,31 +262,41 @@ def get_propagator_settings(thrust_parameters,
                             dependent_variables_to_save,
                             current_propagator = propagation_setup.propagator.cowell ):
 
+    # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Moon']
 
     # Define accelerations acting on vehicle
+    thrust_settings = get_thrust_acceleration_model_from_parameters(
+            thrust_parameters,
+            bodies,
+            simulation_start_epoch,
+            constant_specific_impulse)
     acceleration_settings_on_vehicle = {
         'Moon': [propagation_setup.acceleration.point_mass_gravity()],
-        'Vehicle': [get_thrust_acceleration_model_from_parameters(thrust_parameters,
-                                                                  bodies,
-                                                                  simulation_start_epoch,
-                                                                  constant_specific_impulse)]
+        'Vehicle': [thrust_settings]
     }
-    # Create global accelerations dictionary
+    # Create acceleration models.
     acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
     acceleration_models = propagation_setup.create_acceleration_models(
         bodies,
         acceleration_settings,
         bodies_to_propagate,
         central_bodies)
-    ###########################################################################
-    # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
-    ###########################################################################
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch,
-                                      bodies)
+    initial_state = get_initial_state(simulation_start_epoch, bodies)
+
+    # Create propagation settings for the benchmark
+    translational_propagator_settings = propagation_setup.propagator.translational(
+        central_bodies,
+        acceleration_models,
+        bodies_to_propagate,
+        initial_state,
+        termination_settings,
+        current_propagator,
+        output_variables=dependent_variables_to_save)
+
     # Create mass rate model
     mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass_rate.from_thrust()]}
     mass_rate_models = propagation_setup.create_mass_rate_models(bodies,
@@ -300,16 +308,6 @@ def get_propagator_settings(thrust_parameters,
                                                                  mass_rate_models,
                                                                  np.array([vehicle_initial_mass]),
                                                                  termination_settings)
-
-    # Create propagation settings for the benchmark
-    translational_propagator_settings = propagation_setup.propagator.translational(
-        central_bodies,
-        acceleration_models,
-        bodies_to_propagate,
-        initial_state,
-        termination_settings,
-        current_propagator,
-        output_variables=dependent_variables_to_save)
 
     # Create multi-type propagation settings list
     propagator_settings_list = [translational_propagator_settings,
@@ -325,11 +323,9 @@ def get_propagator_settings(thrust_parameters,
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
                         simulation_start_epoch: float,
-                        specific_impulse: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
                         tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
-                        thrust_parameters: list,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
     """
@@ -369,8 +365,7 @@ def generate_benchmarks(benchmark_step_size: float,
     second_benchmark_step_size = 2.0 * first_benchmark_step_size
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
-    benchmark_integrator = propagation_setup.integrator
-    benchmark_integrator_settings = benchmark_integrator.runge_kutta_variable_step_size(
+    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         first_benchmark_step_size,
         propagation_setup.integrator.RKCoefficientSets.rkdp_87,
@@ -380,13 +375,13 @@ def generate_benchmarks(benchmark_step_size: float,
         np.inf)
 
     print('Running first benchmark...')
-    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(bodies,
-                                                                       benchmark_integrator_settings,
-                                                                       benchmark_propagator_settings, print_dependent_variable_data=True)
+    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        bodies,
+        benchmark_integrator_settings,
+        benchmark_propagator_settings, print_dependent_variable_data=True)
 
     # Create integrator settings for the second benchmark in the same way
-    benchmark_integrator = propagation_setup.integrator
-    benchmark_integrator_settings = benchmark_integrator.runge_kutta_variable_step_size(
+    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         second_benchmark_step_size,
         propagation_setup.integrator.RKCoefficientSets.rkdp_87,
@@ -396,9 +391,10 @@ def generate_benchmarks(benchmark_step_size: float,
         np.inf)
 
     print('Running second benchmark...')
-    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(bodies,
-                                                                        benchmark_integrator_settings,
-                                                                        benchmark_propagator_settings, print_dependent_variable_data=False)
+    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        bodies,
+        benchmark_integrator_settings,
+        benchmark_propagator_settings, print_dependent_variable_data=False)
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
     # Retrieve state history
@@ -456,8 +452,8 @@ def compare_benchmarks(first_benchmark: dict,
         Interpolated difference between the two benchmarks' state (or dependent variable) history.
     """
     # Create 8th-order Lagrange interpolator for first benchmark
-    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
-                                                                                      interpolators.lagrange_interpolation(8))
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        first_benchmark,  interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')
     # Initialize difference dictionaries

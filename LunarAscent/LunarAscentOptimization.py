@@ -62,8 +62,7 @@ simulation output, producing a warning. This warning can be deactivated by forci
 value instead of extrapolating (extrapolation is the default behavior). This can be done by setting:
 
     interpolator_settings = interpolators.lagrange_interpolation(
-        8,
-        boundary_interpolation = interpolators.extrapolate_at_boundary)
+        8, boundary_interpolation = interpolators.extrapolate_at_boundary)
 
 * One frequent error could be the following:
     "Error, propagation terminated at t=4454.723896, returning propagation data up to current time."
@@ -168,13 +167,12 @@ termination_altitude = 100.0E3  # m
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
 
-# Load spice kernels
-spice_interface.load_standard_kernels()
 # Define settings for celestial bodies
 bodies_to_create = ['Moon']
 # Define coordinate system
 global_frame_origin = 'Moon'
 global_frame_orientation = 'ECLIPJ2000'
+
 # Create body settings
 # N.B.: all the bodies added after this function is called will automatically
 # be placed in the same reference frame, which is the same for the full
@@ -186,14 +184,10 @@ body_settings = environment_setup.get_default_body_settings(
 # Create bodies
 bodies = environment_setup.create_system_of_bodies(body_settings)
 
-###########################################################################
-# CREATE VEHICLE ##########################################################
-###########################################################################
-
 # Create vehicle object and add it to the existing system of bodies
 bodies.create_empty_body('Vehicle')
 # Set mass of vehicle
-bodies.get_body('Vehicle').mass  = vehicle_mass
+bodies.get_body('Vehicle').mass = vehicle_mass
 
 ###########################################################################
 # CREATE PROPAGATOR SETTINGS ##############################################
@@ -207,19 +201,7 @@ termination_settings = Util.get_termination_settings(simulation_start_epoch,
 # Retrieve dependent variables to save
 dependent_variables_to_save = Util.get_dependent_variable_save_settings()
 # Check whether there is any
-if not dependent_variables_to_save:
-    are_dependent_variables_to_save = False
-else:
-    are_dependent_variables_to_save = True
-
-propagator_settings = Util.get_propagator_settings(
-    thrust_parameters,
-    bodies,
-    simulation_start_epoch,
-    constant_specific_impulse,
-    vehicle_mass,
-    termination_settings,
-    dependent_variables_to_save)
+are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
 ###########################################################################
 # IF DESIRED, GENERATE BENCHMARK ##########################################
@@ -231,20 +213,24 @@ if use_benchmark:
     benchmark_interpolator_settings = interpolators.lagrange_interpolation(
         8,boundary_interpolation = interpolators.extrapolate_at_boundary)
 
-    # Set output path for the benchmarks
-    if write_results_to_file:
-        benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/'
-    else:
-        benchmark_output_path = None
+    # Create propagator settings for benchmark (Cowell)
+    propagator_settings = Util.get_propagator_settings(
+        thrust_parameters,
+        bodies,
+        simulation_start_epoch,
+        constant_specific_impulse,
+        vehicle_mass,
+        termination_settings,
+        dependent_variables_to_save)
 
-    # Generate benchmarks (
+    benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/' if write_results_to_file else None
+
+    # Generate benchmarks
     benchmark_step_size = 1.0
     benchmark_list = Util.generate_benchmarks(benchmark_step_size,
 						                      simulation_start_epoch,
-                                              constant_specific_impulse,
                                               bodies,
                                               propagator_settings,
-                                              thrust_parameters,
                                               are_dependent_variables_to_save,
                                               benchmark_output_path)
 
@@ -257,7 +243,8 @@ if use_benchmark:
         first_benchmark_state_history,
         benchmark_interpolator_settings)
 
-    # Compare benchmark states, returning interpolator of the first benchmark
+    # Compare benchmark states, returning interpolator of the first benchmark, and writing difference to file if
+    # write_results_to_file is set to True
     benchmark_state_difference = Util.compare_benchmarks(first_benchmark_state_history,
                                                          second_benchmark_state_history,
                                                          benchmark_output_path,
@@ -273,7 +260,8 @@ if use_benchmark:
             first_benchmark_dependent_variable_history,
             benchmark_interpolator_settings)
 
-        # Compare benchmark dependent variables, returning interpolator of the first benchmark, if present
+        # Compare benchmark dependent variables, returning interpolator of the first benchmark, and writing difference
+        # to file if write_results_to_file is set to True
         benchmark_dependent_difference = Util.compare_benchmarks(first_benchmark_dependent_variable_history,
                                                                         second_benchmark_dependent_variable_history,
                                                                         benchmark_output_path,
@@ -314,14 +302,14 @@ available_propagators = [propagation_setup.propagator.cowell,
 # Define settings to loop over
 number_of_propagators = len(available_propagators)
 number_of_integrators = 5
-number_of_integrator_step_size_settings = 4
+
 # Loop over propagators
 for propagator_index in range(number_of_propagators):
     # Get current propagator, and define translational state propagation settings
     current_propagator = available_propagators[propagator_index]
 
     # Define propagation settings
-    propagator_settings = Util.get_propagator_settings(
+    current_propagator_settings = Util.get_propagator_settings(
         thrust_parameters,
         bodies,
         simulation_start_epoch,
@@ -338,6 +326,7 @@ for propagator_index in range(number_of_propagators):
             number_of_integrator_step_size_settings = 6
         else:
             number_of_integrator_step_size_settings = 4
+
         # Loop over all tolerances / step sizes
         for step_size_index in range(number_of_integrator_step_size_settings):
             # Print status
@@ -355,7 +344,7 @@ for propagator_index in range(number_of_propagators):
                                                                       simulation_start_epoch)
             # Create Lunar Ascent Problem object
             dynamics_simulator = numerical_simulation.SingleArcSimulator(
-                bodies, current_integrator_settings, propagator_settings, print_dependent_variable_data=False )
+                bodies, current_integrator_settings, current_propagator_settings, print_dependent_variable_data=False )
 
             ### OUTPUT OF THE SIMULATION ###
             # Retrieve propagated state and dependent variables

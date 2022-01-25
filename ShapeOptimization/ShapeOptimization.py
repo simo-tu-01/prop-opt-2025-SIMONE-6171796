@@ -61,8 +61,7 @@ simulation output, producing a warning. This warning can be deactivated by forci
 value instead of extrapolating (extrapolation is the default behavior). This can be done by setting:
 
     interpolator_settings = interpolators.lagrange_interpolation(
-        8,
-        boundary_interpolation = interpolators.extrapolate_at_boundary)
+        8, boundary_interpolation = interpolators.extrapolate_at_boundary)
 
 * One frequent error could be the following:
     "Error, propagation terminated at t=4454.723896, returning propagation data up to current time."
@@ -112,16 +111,20 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # General imports
 import os
 
+import sys
+sys.path.insert(0, '/home/dominic/Software/tudat-bundle/build-tudat-bundle-Desktop-Default/tudatpy/')
+
 # Tudatpy imports
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
 from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
+from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-from ShapeOptimizationProblem import ShapeOptimizationProblem, add_capsule_to_body_system
+from ShapeOptimizationProblem import add_capsule_to_body_system
 import ShapeOptimizationUtilities as Util
 
 ###########################################################################
@@ -149,6 +152,8 @@ current_dir = os.path.dirname(__file__)
 # DEFINE SIMULATION SETTINGS ##############################################
 ###########################################################################
 
+# Set simulation start epoch
+simulation_start_epoch = 0.0  # s
 # Set termination conditions
 maximum_duration = constants.JULIAN_DAY  # s
 termination_altitude = 25.0E3  # m
@@ -159,10 +164,6 @@ capsule_density = 250.0  # kg m-3
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
 
-# Set simulation start epoch
-simulation_start_epoch = 0.0  # s
-# Load spice kernels
-spice_interface.load_standard_kernels()
 # Define settings for celestial bodies
 bodies_to_create = ['Earth']
 # Define coordinate system
@@ -177,36 +178,15 @@ body_settings = environment_setup.get_default_body_settings(
     bodies_to_create,
     global_frame_origin,
     global_frame_orientation)
-
 # Create bodies
 bodies = environment_setup.create_system_of_bodies(body_settings)
+
 # Create and add capsule to body system
 # NOTE TO STUDENTS: When making any modifications to the capsule vehicle, do NOT make them in this code, but in the
 # add_capsule_to_body_system function
 add_capsule_to_body_system(bodies,
                            shape_parameters,
                            capsule_density)
-
-###########################################################################
-# CREATE ACCELERATIONS ####################################################
-###########################################################################
-
-# Define bodies that are propagated and their central bodies of propagation
-bodies_to_propagate = ['Capsule']
-central_bodies = ['Earth']
-# Define accelerations acting on capsule
-acceleration_settings_on_vehicle = {
-    'Earth': [propagation_setup.acceleration.point_mass_gravity(),
-              propagation_setup.acceleration.aerodynamic()]
-}
-# Create global accelerations dictionary
-acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
-# Create acceleration models.
-acceleration_models = propagation_setup.create_acceleration_models(
-    bodies,
-    acceleration_settings,
-    bodies_to_propagate,
-    central_bodies)
 
 ###########################################################################
 # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
@@ -219,14 +199,8 @@ termination_settings = Util.get_termination_settings(simulation_start_epoch,
 # Retrieve dependent variables to save
 dependent_variables_to_save = Util.get_dependent_variable_save_settings()
 # Check whether there is any
-if not dependent_variables_to_save:
-    are_dependent_variables_to_save = False
-else:
-    are_dependent_variables_to_save = True
+are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
-# Retrieve initial state
-initial_state = Util.get_initial_state(simulation_start_epoch,
-                                       bodies)
 
 ###########################################################################
 # IF DESIRED, GENERATE BENCHMARK ##########################################
@@ -239,58 +213,55 @@ if use_benchmark:
     benchmark_interpolator_settings = interpolators.lagrange_interpolation(
         8,boundary_interpolation = interpolators.extrapolate_at_boundary)
 
-    # Create propagation settings for the benchmark
-    benchmark_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                               acceleration_models,
-                                                                               bodies_to_propagate,
-                                                                               initial_state,
-                                                                               termination_settings,
-                                                                               output_variables=dependent_variables_to_save)
-    # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    #benchmark_propagator_settings.recreate_state_derivative_models(bodies)
-
+    # Create propagator settings for benchmark (Cowell)
+    benchmark_propagator_settings = Util.get_propagator_settings(shape_parameters,
+                                                                 bodies,
+                                                                 simulation_start_epoch,
+                                                                 termination_settings,
+                                                                 dependent_variables_to_save )
     # Set output path for the benchmarks
-    if write_results_to_file:
-        benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/'
-    else:
-        benchmark_output_path = None
+    benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/' if write_results_to_file else None
+
     # Generate benchmarks
     benchmark_time_step = 4.0
     benchmark_list = Util.generate_benchmarks(benchmark_time_step,
-                                                       simulation_start_epoch,
-                                                       capsule_density,
-                                                       bodies,
-                                                       benchmark_propagator_settings,
-                                                       shape_parameters,
-                                                       are_dependent_variables_to_save,
-                                                       benchmark_output_path)
-    # Extract benchmark states
+                                              simulation_start_epoch,
+                                              bodies,
+                                              benchmark_propagator_settings,
+                                              are_dependent_variables_to_save,
+                                              benchmark_output_path)
+
+    # Extract benchmark states (first one is run with benchmark_time_step; second with 2.0*benchmark_time_step)
     first_benchmark_state_history = benchmark_list[0]
     second_benchmark_state_history = benchmark_list[1]
     # Create state interpolator for first benchmark
-    benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark_state_history,
-                                                                                     benchmark_interpolator_settings)
+    benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        first_benchmark_state_history,
+        benchmark_interpolator_settings)
 
-    # Compare benchmark states, returning interpolator of the first benchmark
+    # Compare benchmark states, returning interpolator of the first benchmark, and writing difference to file if
+    # write_results_to_file is set to True
     benchmark_state_difference = Util.compare_benchmarks(first_benchmark_state_history,
-                                                           second_benchmark_state_history,
-                                                           benchmark_output_path,
-                                                           'benchmarks_state_difference.dat')
+                                                         second_benchmark_state_history,
+                                                         benchmark_output_path,
+                                                         'benchmarks_state_difference.dat')
 
     # Extract benchmark dependent variables, if present
     if are_dependent_variables_to_save:
         first_benchmark_dependent_variable_history = benchmark_list[2]
         second_benchmark_dependent_variable_history = benchmark_list[3]
+
         # Create dependent variable interpolator for first benchmark
         benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_vector_interpolator(
             first_benchmark_dependent_variable_history,
             benchmark_interpolator_settings)
 
-        # Compare benchmark dependent variables, returning interpolator of the first benchmark, if present
+        # Compare benchmark dependent variables, returning interpolator of the first benchmark, and writing difference
+        # to file if write_results_to_file is set to True
         benchmark_dependent_difference = Util.compare_benchmarks(first_benchmark_dependent_variable_history,
-                                                                        second_benchmark_dependent_variable_history,
-                                                                        benchmark_output_path,
-                                                                        'benchmarks_dependent_variable_difference.dat')
+                                                                 second_benchmark_dependent_variable_history,
+                                                                 benchmark_output_path,
+                                                                 'benchmarks_dependent_variable_difference.dat')
 
 ###########################################################################
 # RUN SIMULATION FOR VARIOUS SETTINGS #####################################
@@ -302,7 +273,7 @@ tolerances are used (step_size_index=0..3). For the RK4, 6 different step sizes 
 see use of number_of_integrator_step_size_settings variable. See get_integrator_settings function for more details.
 
 For each combination of i, j, and k, results are written to directory:
-    LunarAscent/SimulationOutput/prop_i/int_j/setting_k/
+    ShapeOptimization/SimulationOutput/prop_i/int_j/setting_k/
 
 Specifically:
      state_History.dat                                  Cartesian states as function of time
@@ -325,24 +296,20 @@ available_propagators = [propagation_setup.propagator.cowell,
                          propagation_setup.propagator.unified_state_model_exponential_map]
 
 # Define settings to loop over
-number_of_propagators = 7
+number_of_propagators = len(available_propagators)
 number_of_integrators = 5
-number_of_integrator_step_size_settings = 4
 
 # Loop over propagators
 for propagator_index in range(number_of_propagators):
-    # Get current propagator, and define translational state propagation settings
+
+    # Get current propagator, and define propagation settings
     current_propagator = available_propagators[propagator_index]
-    # Define propagation settings
-    current_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                             acceleration_models,
-                                                                             bodies_to_propagate,
-                                                                             initial_state,
-                                                                             termination_settings,
-                                                                             current_propagator,
-                                                                             dependent_variables_to_save)
-    # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    #current_propagator_settings.recreate_state_derivative_models(bodies)
+    current_propagator_settings = Util.get_propagator_settings(shape_parameters,
+                                                               bodies,
+                                                               simulation_start_epoch,
+                                                               termination_settings,
+                                                               dependent_variables_to_save,
+                                                               current_propagator )
 
     # Loop over different integrators
     for integrator_index in range(number_of_integrators):
@@ -368,22 +335,18 @@ for propagator_index in range(number_of_propagators):
                                                                        integrator_index,
                                                                        step_size_index,
                                                                        simulation_start_epoch)
-            # Create Lunar Ascent Problem object
-            current_shape_optimization_problem = ShapeOptimizationProblem(bodies,
-                                                                          current_integrator_settings,
-                                                                          current_propagator_settings,
-                                                                          capsule_density)
-            # Update thrust settings and evaluate fitness
-            current_shape_optimization_problem.fitness(shape_parameters)
+            # Create Shape Optimization Problem object
+            dynamics_simulator = numerical_simulation.SingleArcSimulator(
+                bodies, current_integrator_settings, current_propagator_settings, print_dependent_variable_data=False )
+
 
             ### OUTPUT OF THE SIMULATION ###
             # Retrieve propagated state and dependent variables
-            # NOTE TO STUDENTS, the following retrieve the propagated states, converted to Cartesian states
-            state_history = current_shape_optimization_problem.get_last_run_propagated_cartesian_state_history()
-            dependent_variable_history = current_shape_optimization_problem.get_last_run_dependent_variable_history()
+            state_history = dynamics_simulator.state_history
+            unprocessed_state_history = dynamics_simulator.unprocessed_state_history
+            dependent_variable_history = dynamics_simulator.dependent_variable_history
 
             # Get the number of function evaluations (for comparison of different integrators)
-            dynamics_simulator = current_shape_optimization_problem.get_last_run_dynamics_simulator()
             function_evaluation_dict = dynamics_simulator.cumulative_number_of_function_evaluations
             number_of_function_evaluations = list(function_evaluation_dict.values())[-1]
             # Add it to a dictionary
@@ -401,6 +364,7 @@ for propagator_index in range(number_of_propagators):
             # Save results to a file
             if write_results_to_file:
                 save2txt(state_history, 'state_history.dat', output_path)
+                save2txt(unprocessed_state_history, 'unprocessed_state_history.dat', output_path)
                 save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
                 save2txt(dict_to_write, 'ancillary_simulation_info.txt',   output_path)
 
@@ -414,8 +378,7 @@ for propagator_index in range(number_of_propagators):
                 # the shorter step size. Therefore, the following lines of code will be forced to extrapolate the
                 # benchmark states (or dependent variables), producing a warning. Be aware of it!
                 for epoch in state_history.keys():
-                    state_difference[epoch] = state_history[epoch] - \
-                                              benchmark_state_interpolator.interpolate(epoch)
+                    state_difference[epoch] = state_history[epoch] - benchmark_state_interpolator.interpolate(epoch)
 
                 # Write differences with respect to the benchmarks to files
                 if write_results_to_file:
@@ -427,8 +390,7 @@ for propagator_index in range(number_of_propagators):
                     dependent_difference = dict()
                     # Loop over the propagated dependent variables and use the benchmark interpolators
                     for epoch in dependent_variable_history.keys():
-                        dependent_difference[epoch] = dependent_variable_history[epoch] - \
-                                                      benchmark_dependent_variable_interpolator.interpolate(epoch)
+                        dependent_difference[epoch] = dependent_variable_history[epoch] - benchmark_dependent_variable_interpolator.interpolate(epoch)
                     # Write differences with respect to the benchmarks to files
                     if write_results_to_file:
                         save2txt(dependent_difference, 'dependent_variable_difference_wrt_benchmark.dat',   output_path)
