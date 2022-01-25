@@ -29,8 +29,10 @@ import numpy as np
 import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
-from tudatpy.kernel.simulation import propagation_setup
-from tudatpy.kernel.simulation import shape_based_thrust
+from tudatpy.kernel.numerical_simulation import propagation_setup
+from tudatpy.kernel import numerical_simulation
+from tudatpy.kernel.trajectory_design import shape_based_thrust
+from tudatpy.kernel.trajectory_design import transfer_trajectory
 
 # Problem-specific imports
 import LowThrustUtilities as Util
@@ -100,7 +102,7 @@ def get_trajectory_final_time(trajectory_parameters: list,
     return initial_time + get_trajectory_time_of_flight(trajectory_parameters) - buffer_time
 
 
-def get_hodographic_trajectory(shaping_object: tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping,
+def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping,
                                trajectory_parameters: list,
                                specific_impulse: float,
                                output_path: str = None):
@@ -119,7 +121,7 @@ def get_hodographic_trajectory(shaping_object: tudatpy.kernel.simulation.shape_b
 
     Parameters
     ----------
-    shaping_object: tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping
+    shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping
         Hodographic shaping object.
     trajectory_parameters : list of floats
         List of trajectory parameters to be optimized.
@@ -299,8 +301,8 @@ def get_axial_velocity_shaping_functions(trajectory_parameters: list,
 
 
 def create_hodographic_shaping_object(trajectory_parameters: list,
-                                      bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies) \
-        -> tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping:
+                                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
+        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
     """
     It creates and returns the hodographic shaping object, based on the trajectory parameters.
 
@@ -308,12 +310,12 @@ def create_hodographic_shaping_object(trajectory_parameters: list,
     ----------
     trajectory_parameters : list
         List of trajectory parameters to be optimized.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
 
     Returns
     -------
-    hodographic_shaping_object : tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping
+    hodographic_shaping_object : tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping
         Hodographic shaping object.
     """
     # Time settings
@@ -345,8 +347,8 @@ def create_hodographic_shaping_object(trajectory_parameters: list,
         time_of_flight,
         number_of_revolutions)
     # Retrieve boundary conditions and central body gravitational parameter
-    initial_state = bodies.get_body('Earth').get_state_in_based_frame_from_ephemeris(initial_time)
-    final_state = bodies.get_body('Mars').get_state_in_based_frame_from_ephemeris(final_time)
+    initial_state = bodies.get_body('Earth').state_in_base_frame_from_ephemeris(initial_time)
+    final_state = bodies.get_body('Mars').state_in_base_frame_from_ephemeris(final_time)
     gravitational_parameter = bodies.get_body('Sun').gravitational_parameter
     # Create and return shape-based method
     hodographic_shaping_object = shape_based_thrust.HodographicShaping(initial_state,
@@ -364,9 +366,9 @@ def create_hodographic_shaping_object(trajectory_parameters: list,
 
 
 def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
-                                               bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                                               bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                                                specific_impulse: float) \
-        -> tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping:
+        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
     """
     It extracts the acceleration settings resulting from the hodographic trajectory and returns the equivalent thrust
     acceleration settings object.
@@ -375,14 +377,14 @@ def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
     ----------
     trajectory_parameters : list
         List of trajectory parameters to be optimized.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     specific_impulse : float
         Constant specific impulse of the spacecraft.
 
     Returns
     -------
-    tudatpy.kernel.simulation.propagation_setup.acceleration.ThrustAccelerationSettings
+    tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings
         Thrust acceleration settings object.
     """
     # Create shaping object
@@ -395,7 +397,7 @@ def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
     # Create specific impulse lambda function
     specific_impulse_function = lambda t: specific_impulse
     # Return acceleration settings
-    return shape_based_thrust.get_low_thrust_acceleration_settings(shaping_object,
+    return transfer_trajectory.get_low_thrust_acceleration_settings(shaping_object,
                                                                    bodies,
                                                                    'Vehicle',
                                                                    specific_impulse_function,
@@ -403,7 +405,7 @@ def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
 
 
 def get_hodograph_state_at_epoch(trajectory_parameters: list,
-                                 bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                                  epoch: float) -> np.ndarray:
     """
     It retrieves the Cartesian state, expressed in the inertial frame, at a given epoch of the analytical trajectory.
@@ -412,7 +414,7 @@ def get_hodograph_state_at_epoch(trajectory_parameters: list,
     ----------
     trajectory_parameters : list
         List of trajectory parameters to be optimized.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
 
     Returns
@@ -461,9 +463,9 @@ class LowThrustProblem:
     """
 
     def __init__(self,
-                 bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
-                 integrator_settings: tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings,
-                 propagator_settings: tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
+                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                 integrator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings,
+                 propagator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
                  specific_impulse: float,
                  minimum_mars_distance: float,
                  time_buffer: float,
@@ -473,11 +475,11 @@ class LowThrustProblem:
 
         Parameters
         ----------
-        bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+        bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
             System of bodies present in the simulation.
-        integrator_settings : tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings
+        integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
             Integrator settings to be provided to the dynamics simulator.
-        propagator_settings : tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings
+        propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings
             Propagator settings object.
         specific_impulse : float
             Constant specific impulse of the vehicle.
@@ -503,7 +505,7 @@ class LowThrustProblem:
         # Extract translational state propagator settings from the full propagator settings
         if perform_propagation:
             self.translational_state_propagator_settings = propagator_settings.single_type_settings(
-                propagation_setup.translational_type)
+                propagation_setup.propagator.translational_type)
 
     def get_last_run_propagated_cartesian_state_history(self) -> dict:
         """
@@ -517,7 +519,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator.state_history
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -532,7 +534,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator.unprocessed_state_history
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -546,9 +548,9 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_dependent_variable_history()
+        return self.dynamics_simulator.dependent_variable_history
 
-    def get_last_run_dynamics_simulator(self) -> tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator:
+    def get_last_run_dynamics_simulator(self) -> tudatpy.kernel.numerical_simulation.SingleArcSimulator:
         """
         Returns the dynamics simulator object.
 
@@ -558,7 +560,7 @@ class LowThrustProblem:
 
         Returns
         -------
-        tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
+        tudatpy.kernel.numerical_simulation.SingleArcSimulator
         """
         return self.dynamics_simulator
 
@@ -590,49 +592,52 @@ class LowThrustProblem:
                                                                    self.time_buffer)
             # Reset initial time
             self.integrator_settings.initial_time = initial_propagation_time
-            # Retrieve the accelerations from the translational state propagator
-            acceleration_settings = self.translational_state_propagator_settings.acceleration_settings
-            # Clear the existing thrust acceleration
-            acceleration_settings['Vehicle']['Vehicle'].clear()
-            # Create specific impulse lambda function
-            specific_impulse_function = lambda t: self.specific_impulse
-            # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
-            # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
-            # trajectory and the beginning of the simulation
-            time_offset = get_trajectory_initial_time(trajectory_parameters)
-            # Retrieve new thrust settings
-            new_thrust_settings = shape_based_thrust.get_low_thrust_acceleration_settings(
-                self.hodographic_shaping,
-                self.bodies,
-                'Vehicle',
-                specific_impulse_function,
-                time_offset)
-            # Set new acceleration settings
-            acceleration_settings['Vehicle']['Vehicle'].append(new_thrust_settings)
-            # Update translational propagator settings: accelerations
-            self.translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
-                                                                                                self.bodies)
-            # Retrieve initial state
-            new_initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
-                                                             self.bodies,
-                                                             initial_propagation_time)
-            # Update translational propagator settings: initial state
-            self.translational_state_propagator_settings.reset_initial_states(new_initial_state)
-            # Update full propagator settings
-            self.propagator_settings.recreate_state_derivative_models(self.bodies)
-            # Reset full initial state
-            new_full_initial_state = propagation_setup.propagator.combine_initial_states(
-                self.propagator_settings.propagator_settings_per_type)
-            self.propagator_settings.reset_initial_states(new_full_initial_state)
-            # Get the termination settings
-            self.propagator_settings.termination_settings = Util.get_termination_settings(trajectory_parameters,
-                                                                                          self.minimum_mars_distance,
-                                                                                          self.time_buffer)
+
+            # TODO: CREATE NEW PARAMETERS
+            # # Retrieve the accelerations from the translational state propagator
+            # acceleration_settings = self.translational_state_propagator_settings.acceleration_settings
+            # # Clear the existing thrust acceleration
+            # acceleration_settings['Vehicle']['Vehicle'].clear()
+            # # Create specific impulse lambda function
+            # specific_impulse_function = lambda t: self.specific_impulse
+            # # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
+            # # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
+            # # trajectory and the beginning of the simulation
+            # time_offset = get_trajectory_initial_time(trajectory_parameters)
+            # # Retrieve new thrust settings
+            # new_thrust_settings = shape_based_thrust.get_low_thrust_acceleration_settings(
+            #     self.hodographic_shaping,
+            #     self.bodies,
+            #     'Vehicle',
+            #     specific_impulse_function,
+            #     time_offset)
+            # # Set new acceleration settings
+            # acceleration_settings['Vehicle']['Vehicle'].append(new_thrust_settings)
+            # # Update translational propagator settings: accelerations
+            # self.translational_state_propagator_settings.reset_and_recreate_acceleration_models(acceleration_settings,
+            #                                                                                     self.bodies)
+            # # Retrieve initial state
+            # new_initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
+            #                                                  self.bodies,
+            #                                                  initial_propagation_time)
+            # # Update translational propagator settings: initial state
+            # self.translational_state_propagator_settings.reset_initial_states(new_initial_state)
+            # # Update full propagator settings
+            # self.propagator_settings.recreate_state_derivative_models(self.bodies)
+            # # Reset full initial state
+            # new_full_initial_state = propagation_setup.propagator.combine_initial_states(
+            #     self.propagator_settings.propagator_settings_per_type)
+            # self.propagator_settings.reset_initial_states(new_full_initial_state)
+            # # Get the termination settings
+            # self.propagator_settings.termination_settings = Util.get_termination_settings(trajectory_parameters,
+            #                                                                               self.minimum_mars_distance,
+            #                                                                               self.time_buffer)
             # Create simulation object and propagate dynamics
-            self.dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(self.bodies,
-                                                                                   self.integrator_settings,
-                                                                                   self.propagator_settings,
-                                                                                   True)
+            self.dynamics_simulator = numerical_simulation.SingleArcSimulator(
+                self.bodies,
+                self.integrator_settings,
+                self.propagator_settings,
+                print_dependent_variable_data = False)
         # For the first two assignments, no computation of fitness is needed
         fitness = 0.0
         return fitness
@@ -647,6 +652,6 @@ class LowThrustProblem:
 
         Returns
         -------
-        tudatpy.kernel.simulation.shape_based_thrust.HodographicShaping
+        tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping
         """
         return self.hodographic_shaping

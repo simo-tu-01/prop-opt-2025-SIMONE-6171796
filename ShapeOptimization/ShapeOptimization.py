@@ -80,7 +80,7 @@ integrator settings are unsuitable for the problem you are considering.
 NOTE: When any of the above errors occur, the propagation results up to the point of the crash can still be extracted
 as normal. It can be checked whether any issues have occured by using the function
 
-dynamics_simulator.integration_completed_successfully()
+dynamics_simulator.integration_completed_successfully
 
 which returns a boolean (false if any issues have occured)
 
@@ -116,8 +116,8 @@ import os
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel.simulation import environment_setup
-from tudatpy.kernel.simulation import propagation_setup
+from tudatpy.kernel.numerical_simulation import environment_setup
+from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
@@ -201,6 +201,12 @@ acceleration_settings_on_vehicle = {
 }
 # Create global accelerations dictionary
 acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
+# Create acceleration models.
+acceleration_models = propagation_setup.create_acceleration_models(
+    bodies,
+    acceleration_settings,
+    bodies_to_propagate,
+    central_bodies)
 
 ###########################################################################
 # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
@@ -230,17 +236,18 @@ initial_state = Util.get_initial_state(simulation_start_epoch,
 # TO ASSESS THE QUALITY OF VARIOUS BENCHMARK SETTINGS
 if use_benchmark:
     # Define benchmark interpolator settings to make a comparison between the two benchmarks
-    benchmark_interpolator_settings = interpolators.lagrange_interpolation(8)
+    benchmark_interpolator_settings = interpolators.lagrange_interpolation(
+        8,boundary_interpolation = interpolators.extrapolate_at_boundary)
 
     # Create propagation settings for the benchmark
     benchmark_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                               acceleration_settings,
+                                                                               acceleration_models,
                                                                                bodies_to_propagate,
                                                                                initial_state,
                                                                                termination_settings,
                                                                                output_variables=dependent_variables_to_save)
     # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    benchmark_propagator_settings.recreate_state_derivative_models(bodies)
+    #benchmark_propagator_settings.recreate_state_derivative_models(bodies)
 
     # Set output path for the benchmarks
     if write_results_to_file:
@@ -261,7 +268,7 @@ if use_benchmark:
     first_benchmark_state_history = benchmark_list[0]
     second_benchmark_state_history = benchmark_list[1]
     # Create state interpolator for first benchmark
-    benchmark_state_interpolator = interpolators.create_one_dimensional_interpolator(first_benchmark_state_history,
+    benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark_state_history,
                                                                                      benchmark_interpolator_settings)
 
     # Compare benchmark states, returning interpolator of the first benchmark
@@ -275,7 +282,7 @@ if use_benchmark:
         first_benchmark_dependent_variable_history = benchmark_list[2]
         second_benchmark_dependent_variable_history = benchmark_list[3]
         # Create dependent variable interpolator for first benchmark
-        benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_interpolator(
+        benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_vector_interpolator(
             first_benchmark_dependent_variable_history,
             benchmark_interpolator_settings)
 
@@ -328,14 +335,14 @@ for propagator_index in range(number_of_propagators):
     current_propagator = available_propagators[propagator_index]
     # Define propagation settings
     current_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                             acceleration_settings,
+                                                                             acceleration_models,
                                                                              bodies_to_propagate,
                                                                              initial_state,
                                                                              termination_settings,
                                                                              current_propagator,
                                                                              dependent_variables_to_save)
     # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    current_propagator_settings.recreate_state_derivative_models(bodies)
+    #current_propagator_settings.recreate_state_derivative_models(bodies)
 
     # Loop over different integrators
     for integrator_index in range(number_of_integrators):
@@ -377,12 +384,12 @@ for propagator_index in range(number_of_propagators):
 
             # Get the number of function evaluations (for comparison of different integrators)
             dynamics_simulator = current_shape_optimization_problem.get_last_run_dynamics_simulator()
-            function_evaluation_dict = dynamics_simulator.get_cumulative_number_of_function_evaluations()
+            function_evaluation_dict = dynamics_simulator.cumulative_number_of_function_evaluations
             number_of_function_evaluations = list(function_evaluation_dict.values())[-1]
             # Add it to a dictionary
             dict_to_write = {'Number of function evaluations (ignore the line above)': number_of_function_evaluations}
             # Check if the propagation was run successfully
-            propagation_outcome = dynamics_simulator.integration_completed_successfully()
+            propagation_outcome = dynamics_simulator.integration_completed_successfully
             dict_to_write['Propagation run successfully'] = propagation_outcome
             # Note if results were written to files
             dict_to_write['Results written to file'] = write_results_to_file

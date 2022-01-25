@@ -27,9 +27,10 @@ import numpy as np
 # Tudatpy imports
 import tudatpy
 from tudatpy.kernel import constants
-from tudatpy.kernel.simulation import environment_setup
-from tudatpy.kernel.simulation import propagation_setup
-from tudatpy.kernel.astro import aerodynamics
+from tudatpy.kernel import numerical_simulation
+from tudatpy.kernel.numerical_simulation import environment_setup
+from tudatpy.kernel.numerical_simulation import environment
+from tudatpy.kernel.numerical_simulation import propagation
 from tudatpy.kernel.math import geometry
 
 ###########################################################################
@@ -38,7 +39,7 @@ from tudatpy.kernel.math import geometry
 
 
 def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometry.Capsule) \
-        -> tudatpy.kernel.astro.aerodynamics.HypersonicLocalInclinationAnalysis:
+        -> tudatpy.kernel.numerical_simulation.environment.HypersonicLocalInclinationAnalysis:
     """
     Function that creates an aerodynamic database for a capsule, based on a set of shape parameters.
 
@@ -56,7 +57,7 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
 
     Returns
     -------
-    hypersonic_local_inclination_analysis : tudatpy.kernel.astro.aerodynamics.HypersonicLocalInclinationAnalysis
+    hypersonic_local_inclination_analysis : tudatpy.kernel.environment.HypersonicLocalInclinationAnalysis
         Database created through the local inclination analysis method.
     """
 
@@ -73,13 +74,13 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
     # Define independent variable values
     independent_variable_data_points = []
     # Mach
-    mach_points = aerodynamics.get_default_local_inclination_mach_points()
+    mach_points = environment.get_default_local_inclination_mach_points()
     independent_variable_data_points.append(mach_points)
     # Angle of attack
     angle_of_attack_points = np.linspace(np.deg2rad(-40),np.deg2rad(40),17)
     independent_variable_data_points.append(angle_of_attack_points)
     # Angle of sideslip
-    angle_of_sideslip_points = aerodynamics.get_default_local_inclination_sideslip_angle_points()
+    angle_of_sideslip_points = environment.get_default_local_inclination_sideslip_angle_points()
     independent_variable_data_points.append(angle_of_sideslip_points)
 
     # Define local inclination method to use (index 0=Newtonian flow)
@@ -91,7 +92,7 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
     reference_area = np.pi * capsule_middle_radius ** 2
 
     # Create aerodynamic database
-    hypersonic_local_inclination_analysis = aerodynamics.HypersonicLocalInclinationAnalysis(
+    hypersonic_local_inclination_analysis = environment.HypersonicLocalInclinationAnalysis(
         independent_variable_data_points,
         capsule_shape,
         number_of_lines,
@@ -105,7 +106,7 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
 
 
 def set_capsule_shape_parameters(shape_parameters: list,
-                                 bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                                  capsule_density: float):
     """
     It computes and creates the properties of the capsule (shape, mass, aerodynamic coefficient interface...).
@@ -114,7 +115,7 @@ def set_capsule_shape_parameters(shape_parameters: list,
     ----------
     shape_parameters : list of floats
         List of shape parameters to be optimized.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     capsule_density : float
         Constant density of the vehicle.
@@ -141,12 +142,12 @@ def set_capsule_shape_parameters(shape_parameters: list,
     # Create aerodynamic interface from shape parameters (this calls the local inclination analysis)
     new_aerodynamic_coefficient_interface = get_capsule_coefficient_interface(new_capsule)
     # Update the Capsule's aerodynamic coefficient interface
-    bodies.get_body('Capsule').set_aerodynamic_coefficient_interface(new_aerodynamic_coefficient_interface)
+    bodies.get_body('Capsule').aerodynamic_coefficient_interface = new_aerodynamic_coefficient_interface
 
 
 # NOTE TO STUDENTS: if and when making modifications to the capsule shape, do include them in this function and not in
 # the main code.
-def add_capsule_to_body_system(bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                                shape_parameters: list,
                                capsule_density: float):
     """
@@ -155,7 +156,7 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.simulation.environment_set
 
     Parameters
     ----------
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     shape_parameters : list of floats
         List of shape parameters to be optimized.
@@ -178,7 +179,7 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.simulation.environment_set
 # CREATE GUIDANCE CLASS ###################################################
 ###########################################################################
 
-class CapsuleAerodynamicGuidance(aerodynamics.AerodynamicGuidance):
+class CapsuleAerodynamicGuidance(propagation.AerodynamicGuidance):
     """
     Class to set the aerodynamic angles of the capsule (derived from the base class AerodynamicGuidance present in
     tudat).
@@ -200,14 +201,14 @@ class CapsuleAerodynamicGuidance(aerodynamics.AerodynamicGuidance):
     """
 
     def __init__(self,
-                 bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                  fixed_angle_of_attack: float):
         """
         Constructor for the CapsuleAerodynamicGuidance class.
 
         Parameters
         ----------
-        bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+        bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
             System of bodies present in the simulation.
         fixed_angle_of_attack : float
             Angle of attack (constant) [rad].
@@ -217,7 +218,7 @@ class CapsuleAerodynamicGuidance(aerodynamics.AerodynamicGuidance):
         none
         """
         # Call the base class constructor
-        aerodynamics.AerodynamicGuidance.__init__(self)
+        propagation.AerodynamicGuidance.__init__(self)
         # Save arguments as attributes
         self.bodies = bodies
         self.fixed_angle_of_attack = fixed_angle_of_attack
@@ -278,11 +279,11 @@ class ShapeOptimizationProblem:
 
         Parameters
         ----------
-        bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+        bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
             System of bodies present in the simulation.
-        integrator_settings : tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings
+        integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
             Integrator settings to be provided to the dynamics simulator.
-        propagator_settings : tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings
+        propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings
             Propagator settings object.
         capsule_density : float
             Constant density of the vehicle.
@@ -309,7 +310,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator.state_history
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -324,7 +325,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator.unprocessed_state_history
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -338,7 +339,7 @@ class ShapeOptimizationProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_dependent_variable_history()
+        return self.dynamics_simulator.dependent_variable_history
 
     def get_last_run_dynamics_simulator(self):
         """
@@ -350,7 +351,7 @@ class ShapeOptimizationProblem:
 
         Returns
         -------
-        tudatpy.kernel.simulation.propagation_setup.SingleArcDynamicsSimulator
+        tudatpy.kernel.numerical_simulation.SingleArcSimulator
         """
         return self.dynamics_simulator
 
@@ -375,28 +376,29 @@ class ShapeOptimizationProblem:
         """
 
         # Delete existing capsule
-        self.bodies.delete_body('Capsule')
+        #TODO self.bodies.remove_body('Capsule')
         # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
-        add_capsule_to_body_system(self.bodies,
-                                   shape_parameters,
-                                   self.capsule_density)
+        #TODO  add_capsule_to_body_system(self.bodies,
+        #                           shape_parameters,
+        #                           self.capsule_density)
 
         # Update propagation model with new body shape
-        self.propagator_settings.recreate_state_derivative_models(self.bodies)
+        #self.propagator_settings.recreate_state_derivative_models(self.bodies)
 
         # Create new aerodynamic guidance
         guidance_object = CapsuleAerodynamicGuidance(self.bodies,
                                                      shape_parameters[5])
         # Set aerodynamic guidance (this line links the CapsuleAerodynamicGuidance settings with the propagation)
         environment_setup.set_aerodynamic_guidance(guidance_object,
-                                                   self.bodies.get_body('Capsule'))
+                                                   self.bodies.get_body('Capsule'),
+                                                   silence_warnings=True)
 
         # Create simulation object and propagate dynamics
-        self.dynamics_simulator = propagation_setup.SingleArcDynamicsSimulator(
+        self.dynamics_simulator = numerical_simulation.SingleArcSimulator(
             self.bodies,
             self.integrator_settings,
             self.propagator_settings,
-            True)
+            print_dependent_variable_data=False )
 
         # For the first two assignments, no computation of fitness is needed
         fitness = 0.0

@@ -81,7 +81,7 @@ integrator settings are unsuitable for the problem you are considering.
 NOTE: When any of the above errors occur, the propagation results up to the point of the crash can still be extracted
 as normal. It can be checked whether any issues have occured by using the function
 
-dynamics_simulator.integration_completed_successfully()
+dynamics_simulator.integration_completed_successfully
 
 which returns a boolean (false if any issues have occured)
 
@@ -110,6 +110,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+import sys
+sys.path.insert(0, '/home/dominic/Software/tudat-bundle/build-tudat-bundle-Desktop-Default/tudatpy/')
+
 # General imports
 import numpy as np
 import os
@@ -118,8 +121,8 @@ import os
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel.simulation import environment_setup
-from tudatpy.kernel.simulation import propagation_setup
+from tudatpy.kernel.numerical_simulation import environment_setup
+from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
@@ -144,7 +147,7 @@ thrust_parameters = [15629.13262285292,
 # Choose whether benchmark is run
 use_benchmark = True
 # Choose whether output of the propagation is written to files
-write_results_to_file = False
+write_results_to_file = True
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
 
@@ -191,71 +194,81 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 # Create vehicle object and add it to the existing system of bodies
 bodies.create_empty_body('Vehicle')
 # Set mass of vehicle
-bodies.get_body('Vehicle').set_constant_mass(vehicle_mass)
+bodies.get_body('Vehicle').mass  = vehicle_mass
 
 ###########################################################################
 # CREATE ACCELERATIONS ####################################################
 ###########################################################################
 
 # Define bodies that are propagated and their central bodies of propagation
-bodies_to_propagate = ['Vehicle']
-central_bodies = ['Moon']
-# Define accelerations acting on vehicle
-acceleration_settings_on_vehicle = {
-    'Moon': [propagation_setup.acceleration.point_mass_gravity()],
-    'Vehicle': [get_thrust_acceleration_model_from_parameters(thrust_parameters,
-                                                                  bodies,
-                                                                  simulation_start_epoch,
-                                                                  constant_specific_impulse)]
-}
-# Create global accelerations dictionary
-acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
-
-###########################################################################
-# CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
-###########################################################################
-
-# Retrieve termination settings
-termination_settings = Util.get_termination_settings(simulation_start_epoch,
-                                                    maximum_duration,
-                                                    termination_altitude,
-                                                    vehicle_dry_mass)
-# Retrieve dependent variables to save
-dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-# Check whether there is any
-if not dependent_variables_to_save:
-    are_dependent_variables_to_save = False
-else:
-    are_dependent_variables_to_save = True
-# Retrieve initial state
-initial_state = Util.get_initial_state(simulation_start_epoch,
-                                      bodies)
-# Create mass rate model
-mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass.from_thrust()]}
-# Create mass propagator settings (same for all propagations)
-mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
-                                                             mass_rate_settings_on_vehicle,
-                                                             np.array([vehicle_mass]),
-                                                             termination_settings)
+# bodies_to_propagate = ['Vehicle']
+# central_bodies = ['Moon']
+#
+# # Define accelerations acting on vehicle
+# acceleration_settings_on_vehicle = {
+#     'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+#     'Vehicle': [get_thrust_acceleration_model_from_parameters(thrust_parameters,
+#                                                                   bodies,
+#                                                                   simulation_start_epoch,
+#                                                                   constant_specific_impulse)]
+# }
+# # Create global accelerations dictionary
+# acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
+# acceleration_models = propagation_setup.create_acceleration_models(
+#     bodies,
+#     acceleration_settings,
+#     bodies_to_propagate,
+#     central_bodies)
+# ###########################################################################
+# # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
+# ###########################################################################
+#
+# # Retrieve termination settings
+# termination_settings = Util.get_termination_settings(simulation_start_epoch,
+#                                                     maximum_duration,
+#                                                     termination_altitude,
+#                                                     vehicle_dry_mass)
+# # Retrieve dependent variables to save
+# dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+# # Check whether there is any
+# if not dependent_variables_to_save:
+#     are_dependent_variables_to_save = False
+# else:
+#     are_dependent_variables_to_save = True
+# # Retrieve initial state
+# initial_state = Util.get_initial_state(simulation_start_epoch,
+#                                       bodies)
+# # Create mass rate model
+# mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass_rate.from_thrust()]}
+# mass_rate_models = propagation_setup.create_mass_rate_models( bodies,
+#                                                               mass_rate_settings_on_vehicle,
+#                                                               acceleration_models )
+# # Create mass propagator settings (same for all propagations)
+# mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
+#                                                              mass_rate_models,
+#                                                              np.array([vehicle_mass]),
+#                                                              termination_settings)
 
 ###########################################################################
 # IF DESIRED, GENERATE BENCHMARK ##########################################
 ###########################################################################
 
 if use_benchmark:
+
     # Define benchmark interpolator settings to make a comparison between the two benchmarks
-    benchmark_interpolator_settings = interpolators.lagrange_interpolation(8)
+    benchmark_interpolator_settings = interpolators.lagrange_interpolation(
+        8,boundary_interpolation = interpolators.extrapolate_at_boundary)
 
     # Create propagation settings for the benchmark
     translational_propagator_settings = propagation_setup.propagator.translational(
         central_bodies,
-        acceleration_settings,
+        acceleration_models,
         bodies_to_propagate,
         initial_state,
         termination_settings,
         output_variables=dependent_variables_to_save)
-        # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    translational_propagator_settings.recreate_state_derivative_models(bodies)
+    # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
+    #translational_propagator_settings.recreate_state_derivative_models(bodies)
 
     # Create multi-type propagation settings list
     propagator_settings_list = [translational_propagator_settings,
@@ -283,7 +296,7 @@ if use_benchmark:
     first_benchmark_state_history = benchmark_list[0]
     second_benchmark_state_history = benchmark_list[1]
     # Create state interpolator for first benchmark
-    benchmark_state_interpolator = interpolators.create_one_dimensional_interpolator(first_benchmark_state_history,
+    benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark_state_history,
                                                                                      benchmark_interpolator_settings)
 
     # Compare benchmark states, returning interpolator of the first benchmark
@@ -297,7 +310,7 @@ if use_benchmark:
         first_benchmark_dependent_variable_history = benchmark_list[2]
         second_benchmark_dependent_variable_history = benchmark_list[3]
         # Create dependent variable interpolator for first benchmark
-        benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_interpolator(
+        benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_vector_interpolator(
             first_benchmark_dependent_variable_history,
             benchmark_interpolator_settings)
 
@@ -347,14 +360,14 @@ for propagator_index in range(number_of_propagators):
     current_propagator = available_propagators[propagator_index]
     # Define translational state propagation settings
     translational_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                                         acceleration_settings,
+                                                                                         acceleration_models,
                                                                                          bodies_to_propagate,
                                                                                          initial_state,
                                                                                          termination_settings,
                                                                                          current_propagator,
                                                                                          dependent_variables_to_save)
     # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    translational_propagator_settings.recreate_state_derivative_models(bodies)
+    #TODO translational_propagator_settings.recreate_state_derivative_models(bodies)
 
     # Create list of propagators, adding mass, and define full propagation settings
     propagator_settings_list = [translational_propagator_settings,
@@ -401,12 +414,12 @@ for propagator_index in range(number_of_propagators):
 
             # Get the number of function evaluations (for comparison of different integrators)
             dynamics_simulator = current_lunar_ascent_problem.get_last_run_dynamics_simulator()
-            function_evaluation_dict = dynamics_simulator.get_cumulative_number_of_function_evaluations()
+            function_evaluation_dict = dynamics_simulator.cumulative_number_of_function_evaluations
             number_of_function_evaluations = list(function_evaluation_dict.values())[-1]
             # Add it to a dictionary
             dict_to_write = {'Number of function evaluations (ignore the line above)': number_of_function_evaluations}
             # Check if the propagation was run successfully
-            propagation_outcome = dynamics_simulator.integration_completed_successfully()
+            propagation_outcome = dynamics_simulator.integration_completed_successfully
             dict_to_write['Propagation run successfully'] = propagation_outcome
             # Note if results were written to files
             dict_to_write['Results written to file'] = write_results_to_file

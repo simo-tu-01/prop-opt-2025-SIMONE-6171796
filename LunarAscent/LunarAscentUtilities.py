@@ -28,12 +28,14 @@ import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel.simulation import propagation_setup
-from tudatpy.kernel.astro import conversion
+from tudatpy.kernel.numerical_simulation import propagation_setup
+from tudatpy.kernel.numerical_simulation import environment
+from tudatpy.kernel.astro import element_conversion
+from tudatpy.kernel.astro import frame_conversion
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-from LunarAscentProblem import LunarAscentProblem
+from LunarAscentProblem import LunarAscentProblem, get_thrust_acceleration_model_from_parameters
 
 ###########################################################################
 # USEFUL FUNCTIONS ########################################################
@@ -41,7 +43,7 @@ from LunarAscentProblem import LunarAscentProblem
 
 
 def get_initial_state(simulation_start_epoch: float,
-                      bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies) -> np.ndarray:
+                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) -> np.ndarray:
     """
     Converts the initial state to inertial coordinates.
 
@@ -54,7 +56,7 @@ def get_initial_state(simulation_start_epoch: float,
     ----------
     simulation_start_epoch : float
         Start of the simulation [s] with t=0 at J2000.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
 
     Returns
@@ -76,16 +78,12 @@ def get_initial_state(simulation_start_epoch: float,
     # heading angle (rad)
     heading_angle = np.deg2rad(90.0)
     # Convert spherical elements to body-fixed cartesian coordinates
-    initial_cartesian_state_body_fixed = conversion.spherical_to_cartesian(radius,
-                                                                latitude,
-                                                                longitude,
-                                                                speed,
-                                                                flight_path_angle,
-                                                                heading_angle)
+    initial_cartesian_state_body_fixed = element_conversion.spherical_to_cartesian_elementwise(
+        radius, latitude,  longitude, speed, flight_path_angle, heading_angle)
     # Get rotational ephemerides of the Moon
     moon_rotational_model = bodies.get_body('Moon').rotation_model
     # Transform the state to the global (inertial) frame
-    initial_state_inertial_coordinates = conversion.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
+    initial_state_inertial_coordinates = environment.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
                                                                                       simulation_start_epoch,
                                                                                       moon_rotational_model)
     return initial_state_inertial_coordinates
@@ -95,7 +93,7 @@ def get_termination_settings(simulation_start_epoch: float,
                              maximum_duration: float,
                              termination_altitude: float,
                              vehicle_dry_mass: float) \
-        -> tudatpy.kernel.simulation.propagation_setup.propagator.PropagationTerminationSettings:
+        -> tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings:
     """
     Get the termination settings for the simulation.
 
@@ -117,7 +115,7 @@ def get_termination_settings(simulation_start_epoch: float,
 
     Returns
     -------
-    hybrid_termination_settings : tudatpy.kernel.simulation.propagation_setup.propagator.PropagationTerminationSettings
+    hybrid_termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
         Propagation termination settings object.
     """
     # Create single PropagationTerminationSettings objects
@@ -173,7 +171,7 @@ def get_dependent_variable_save_settings() -> list:
 
     Returns
     -------
-    dependent_variables_to_save : list[tudatpy.kernel.simulation.propagation_setup.dependent_variable]
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.altitude('Vehicle', 'Moon'),
@@ -181,13 +179,12 @@ def get_dependent_variable_save_settings() -> list:
                                    propagation_setup.dependent_variable.flight_path_angle('Vehicle', 'Moon')]
     return dependent_variables_to_save
 
-
 # NOTE TO STUDENTS: THIS FUNCTION SHOULD BE EXTENDED TO USE MORE INTEGRATORS FOR ASSIGNMENT 1.
 def get_integrator_settings(propagator_index: int,
                             integrator_index: int,
                             settings_index: int,
                             simulation_start_epoch: float) \
-        -> tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings:
+        -> tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
     """
 
     Retrieves the integrator settings.
@@ -220,7 +217,7 @@ def get_integrator_settings(propagator_index: int,
 
     Returns
     -------
-    integrator_settings : tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings
+    integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
         Integrator settings to be provided to the dynamics simulator.
 
     """
@@ -257,13 +254,66 @@ def get_integrator_settings(propagator_index: int,
     return integrator_settings
 
 
+def get_propagator_settings(thrust_parameters,
+                            bodies,
+                            simulation_start_epoch,
+                            constant_specific_impulse,
+                            vehicle_initial_mass ):
+    bodies_to_propagate = ['Vehicle']
+    central_bodies = ['Moon']
+
+    # Define accelerations acting on vehicle
+    acceleration_settings_on_vehicle = {
+        'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        'Vehicle': [get_thrust_acceleration_model_from_parameters(thrust_parameters,
+                                                                  bodies,
+                                                                  simulation_start_epoch,
+                                                                  constant_specific_impulse)]
+    }
+    # Create global accelerations dictionary
+    acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
+    acceleration_models = propagation_setup.create_acceleration_models(
+        bodies,
+        acceleration_settings,
+        bodies_to_propagate,
+        central_bodies)
+    ###########################################################################
+    # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
+    ###########################################################################
+
+    # Retrieve termination settings
+    termination_settings = get_termination_settings(simulation_start_epoch,
+                                                         maximum_duration,
+                                                         termination_altitude,
+                                                         vehicle_dry_mass)
+    # Retrieve dependent variables to save
+    dependent_variables_to_save = get_dependent_variable_save_settings()
+    # Check whether there is any
+    if not dependent_variables_to_save:
+        are_dependent_variables_to_save = False
+    else:
+        are_dependent_variables_to_save = True
+    # Retrieve initial state
+    initial_state = get_initial_state(simulation_start_epoch,
+                                           bodies)
+    # Create mass rate model
+    mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass_rate.from_thrust()]}
+    mass_rate_models = propagation_setup.create_mass_rate_models(bodies,
+                                                                 mass_rate_settings_on_vehicle,
+                                                                 acceleration_models)
+    # Create mass propagator settings (same for all propagations)
+    mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
+                                                                 mass_rate_models,
+                                                                 np.array([vehicle_initial_mass]),
+                                                                 termination_settings)
+
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
 			simulation_start_epoch: float,
                         specific_impulse: float,
-                        bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                        bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
-                        tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
+                        tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
                         thrust_parameters: list,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
@@ -282,7 +332,7 @@ def generate_benchmarks(benchmark_step_size: float,
     ----------
     simulation_start_epoch : float
         The start time of the simulation in seconds.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     benchmark_propagator_settings
         Propagator settings object which is used to run the benchmark propagations.
@@ -399,7 +449,7 @@ def compare_benchmarks(first_benchmark: dict,
         Interpolated difference between the two benchmarks' state (or dependent variable) history.
     """
     # Create 8th-order Lagrange interpolator for first benchmark
-    benchmark_interpolator = interpolators.create_one_dimensional_interpolator(first_benchmark,
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
                                                                                interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')

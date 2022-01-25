@@ -28,7 +28,7 @@ import numpy as np
 import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
-from tudatpy.kernel.simulation import propagation_setup
+from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
@@ -43,7 +43,7 @@ import LowThrustProblem as LowThrust
 def get_termination_settings(trajectory_parameters,
                              minimum_mars_distance: float,
                              time_buffer: float) \
-        -> tudatpy.kernel.simulation.propagation_setup.propagator.PropagationTerminationSettings:
+        -> tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings:
     """
     Get the termination settings for the simulation.
 
@@ -62,7 +62,7 @@ def get_termination_settings(trajectory_parameters,
 
     Returns
     -------
-    hybrid_termination_settings : tudatpy.kernel.simulation.propagation_setup.propagator.PropagationTerminationSettings
+    hybrid_termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
         Propagation termination settings object.
     """
     # Create single PropagationTerminationSettings objects
@@ -103,7 +103,7 @@ def get_dependent_variable_save_settings() -> list:
 
     Returns
     -------
-    dependent_variables_to_save : list[tudatpy.kernel.simulation.propagation_setup.dependent_variable]
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.relative_distance('Vehicle', 'Earth'),
@@ -117,7 +117,7 @@ def get_integrator_settings(propagator_index: int,
                             integrator_index: int,
                             settings_index: int,
                             simulation_start_epoch: float) \
-        -> tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings:
+        -> tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
     """
 
     Retrieves the integrator settings.
@@ -150,7 +150,7 @@ def get_integrator_settings(propagator_index: int,
 
     Returns
     -------
-    integrator_settings : tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings
+    integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
         Integrator settings to be provided to the dynamics simulator.
 
     """
@@ -194,9 +194,9 @@ def generate_benchmarks(benchmark_step_size: float,
                         specific_impulse: float,
                         minimum_mars_distance: float,
                         time_buffer: float,
-                        bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                        bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
-                        tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
+                        tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
                         trajectory_parameters: list,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
@@ -221,7 +221,7 @@ def generate_benchmarks(benchmark_step_size: float,
         Minimum distance from Mars at which the propagation stops.
     time_buffer : float
         Time interval between the simulation start epoch and the beginning of the hodographic trajectory.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
         System of bodies present in the simulation.
     benchmark_propagator_settings
         Propagator settings object which is used to run the benchmark propagations.
@@ -341,7 +341,7 @@ def compare_benchmarks(first_benchmark: dict,
         Interpolated difference between the two benchmarks' state (or dependent variable) history.
     """
     # Create 8th-order Lagrange interpolator for first benchmark
-    benchmark_interpolator = interpolators.create_one_dimensional_interpolator(first_benchmark,
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
                                                                                interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')

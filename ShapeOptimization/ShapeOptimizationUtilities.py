@@ -29,10 +29,10 @@ import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel.simulation import propagation_setup
-from tudatpy.kernel.astro import conversion
+from tudatpy.kernel.numerical_simulation import propagation_setup
+from tudatpy.kernel.numerical_simulation import environment
+from tudatpy.kernel.astro import element_conversion
 from tudatpy.kernel.math import interpolators
-
 # Problem-specific imports
 from ShapeOptimizationProblem import ShapeOptimizationProblem
 
@@ -42,7 +42,7 @@ from ShapeOptimizationProblem import ShapeOptimizationProblem
 
 
 def get_initial_state(simulation_start_epoch: float,
-                      bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies) -> np.ndarray:
+                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) -> np.ndarray:
     """
     Converts the initial state to inertial coordinates.
 
@@ -55,7 +55,7 @@ def get_initial_state(simulation_start_epoch: float,
     ----------
     simulation_start_epoch : float
         Start of the simulation [s] with t=0 at J2000.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
 
     Returns
@@ -78,16 +78,12 @@ def get_initial_state(simulation_start_epoch: float,
     heading_angle = np.deg2rad(34.37)
 
     # Convert spherical elements to body-fixed cartesian coordinates
-    initial_cartesian_state_body_fixed = conversion.spherical_to_cartesian(radial_distance,
-                                                                latitude,
-                                                                longitude,
-                                                                speed,
-                                                                flight_path_angle,
-                                                                heading_angle)
+    initial_cartesian_state_body_fixed = element_conversion.spherical_to_cartesian_elementwise(
+        radial_distance, latitude, longitude, speed, flight_path_angle, heading_angle)
     # Get rotational ephemerides of the Earth
     earth_rotational_model = bodies.get_body('Earth').rotation_model
     # Transform the state to the global (inertial) frame
-    initial_cartesian_state_inertial = conversion.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
+    initial_cartesian_state_inertial = environment.transform_to_inertial_orientation(initial_cartesian_state_body_fixed,
                                                                                       simulation_start_epoch,
                                                                                       earth_rotational_model)
     return initial_cartesian_state_inertial
@@ -95,7 +91,7 @@ def get_initial_state(simulation_start_epoch: float,
 def get_termination_settings(simulation_start_epoch: float,
                              maximum_duration: float,
                              termination_altitude: float) \
-        -> tudatpy.kernel.simulation.propagation_setup.propagator.PropagationTerminationSettings:
+        -> tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings:
     """
     Get the termination settings for the simulation.
 
@@ -115,7 +111,7 @@ def get_termination_settings(simulation_start_epoch: float,
 
     Returns
     -------
-    hybrid_termination_settings : tudatpy.kernel.simulation.propagation_setup.propagator.PropagationTerminationSettings
+    hybrid_termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
         Propagation termination settings object.
     """
     # Create single PropagationTerminationSettings objects
@@ -156,7 +152,7 @@ def get_dependent_variable_save_settings() -> list:
 
     Returns
     -------
-    dependent_variables_to_save : list[tudatpy.kernel.simulation.propagation_setup.dependent_variable]
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.mach_number('Capsule', 'Earth'),
@@ -169,7 +165,7 @@ def get_integrator_settings(propagator_index: int,
                             integrator_index: int,
                             settings_index: int,
                             simulation_start_epoch: float) \
-        -> tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings:
+        -> tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
     """
 
     Retrieves the integrator settings.
@@ -201,7 +197,7 @@ def get_integrator_settings(propagator_index: int,
 
     Returns
     -------
-    integrator_settings : tudatpy.kernel.simulation.propagation_setup.integrator.IntegratorSettings
+    integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
         Integrator settings to be provided to the dynamics simulator.
     """
     # Define list of multi-stage integrators
@@ -242,9 +238,9 @@ def get_integrator_settings(propagator_index: int,
 def generate_benchmarks(benchmark_step_size,
                         simulation_start_epoch: float,
                         specific_impulse: float,
-                        bodies: tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+                        bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
-                        tudatpy.kernel.simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
+                        tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
                         thrust_parameters: list,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
@@ -263,7 +259,7 @@ def generate_benchmarks(benchmark_step_size,
     ----------
     simulation_start_epoch : float
         The start time of the simulation in seconds.
-    bodies : tudatpy.kernel.simulation.environment_setup.SystemOfBodies,
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
         System of bodies present in the simulation.
     benchmark_propagator_settings
         Propagator settings object which is used to run the benchmark propagations.
@@ -381,7 +377,7 @@ def compare_benchmarks(first_benchmark: dict,
         Interpolated difference between the two benchmarks' state (or dependent variable) history.
     """
     # Create 8th-order Lagrange interpolator for first benchmark
-    benchmark_interpolator = interpolators.create_one_dimensional_interpolator(first_benchmark,
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
                                                                                interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')
