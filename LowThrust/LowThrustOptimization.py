@@ -125,14 +125,12 @@ sys.path.insert(0, '/home/dominic/Software/tudat-bundle/build-tudat-bundle-Deskt
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
+from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-from LowThrustProblem import LowThrustProblem, get_trajectory_initial_time, get_hodographic_trajectory
-from LowThrustProblem import get_hodograph_thrust_acceleration_settings, get_hodograph_state_at_epoch
-from LowThrustProblem import create_hodographic_shaping_object
 import LowThrustUtilities as Util
 
 ###########################################################################
@@ -174,7 +172,9 @@ minimum_mars_distance = 5.0E7
 # Time since 'departure from Earth CoM' at which propagation starts (and similar
 # for arrival time)
 time_buffer = 30.0 * constants.JULIAN_DAY
-
+# Time at which to start propagation
+initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
+                                                       time_buffer)
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
@@ -196,44 +196,15 @@ body_settings = environment_setup.get_default_body_settings(bodies_to_create,
 # Create bodies
 bodies = environment_setup.create_system_of_bodies(body_settings)
 
-###########################################################################
-# CREATE VEHICLE ##########################################################
-###########################################################################
-
+# Create vehicle object and add it to the existing system of bodies
 bodies.create_empty_body('Vehicle')
-bodies.get_body('Vehicle').set_constant_mass(vehicle_mass)
+bodies.get_body('Vehicle').mass = vehicle_mass
 
 ###########################################################################
-# CREATE ACCELERATIONS ####################################################
+# CREATE PROPAGATOR SETTINGS ##############################################
 ###########################################################################
 
-# Define bodies that are propagated and their central bodies of propagation
-bodies_to_propagate = ['Vehicle']
-central_bodies = ['Sun']
-# Retrieve thrust acceleration
-thrust_settings = get_hodograph_thrust_acceleration_settings(trajectory_parameters,
-                                                             bodies,
-                                                             specific_impulse)
-# Define accelerations acting on capsule
-acceleration_settings_on_vehicle = {
-    'Sun': [propagation_setup.acceleration.point_mass_gravity()],
-    'Vehicle': [thrust_settings]
-}
-# Create global accelerations dictionary
-acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
-acceleration_models = propagation_setup.create_acceleration_models(
-    bodies,
-    acceleration_settings,
-    bodies_to_propagate,
-    central_bodies)
 
-###########################################################################
-# CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
-###########################################################################
-
-# Retrieve initial time
-initial_propagation_time = get_trajectory_initial_time(trajectory_parameters,
-                                                       time_buffer)
 # Retrieve termination settings
 termination_settings = Util.get_termination_settings(trajectory_parameters,
                                                      minimum_mars_distance,
@@ -241,24 +212,8 @@ termination_settings = Util.get_termination_settings(trajectory_parameters,
 # Retrieve dependent variables to save
 dependent_variables_to_save = Util.get_dependent_variable_save_settings()
 # Check whether there is any
-if not dependent_variables_to_save:
-    are_dependent_variables_to_save = False
-else:
-    are_dependent_variables_to_save = True
-# Retrieve initial state
-initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
-                                             bodies,
-                                             initial_propagation_time)
-# Create mass rate model
-mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass_rate.from_thrust()]}
-mass_rate_models = propagation_setup.create_mass_rate_models( bodies,
-                                                              mass_rate_settings_on_vehicle,
-                                                              acceleration_models )
-# Create mass propagator settings (same for all propagations)
-mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
-                                                             mass_rate_models,
-                                                             np.array([vehicle_mass]),
-                                                             termination_settings)
+are_dependent_variables_to_save = False if not dependent_variables_to_save else True
+
 
 ###########################################################################
 # IF DESIRED, GENERATE AND COMPARE BENCHMARKS #############################
@@ -271,38 +226,24 @@ if use_benchmark:
     benchmark_interpolator_settings = interpolators.lagrange_interpolation(
         8,boundary_interpolation = interpolators.extrapolate_at_boundary)
 
-    # Create propagation settings for the benchmark
-    translational_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                                   acceleration_models,
-                                                                                   bodies_to_propagate,
-                                                                                   initial_state,
-                                                                                   termination_settings,
-                                                                                   output_variables=dependent_variables_to_save)
-    # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    #translational_propagator_settings.recreate_state_derivative_models(bodies)
+    # Create propagator settings for benchmark (Cowell)
+    propagator_settings = Util.get_propagator_settings(
+        trajectory_parameters,
+        bodies,
+        initial_propagation_time,
+        specific_impulse,
+        vehicle_mass,
+        termination_settings,
+        dependent_variables_to_save)
 
-    # Create multi-type propagation settings list
-    propagator_settings_list = [translational_propagator_settings,
-                                mass_propagator_settings]
-    # Create multi-type propagation settings object
-    benchmark_propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
-                                                                           termination_settings,
-                                                                           dependent_variables_to_save)
-    # Set output path for the benchmarks
-    if write_results_to_file:
-        benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/'
-    else:
-        benchmark_output_path = None
+    benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/' if write_results_to_file else None
+
     # Generate benchmarks
     benchmark_step_size = 86400.0
     benchmark_list = Util.generate_benchmarks(benchmark_step_size,
                                               initial_propagation_time,
-                                              specific_impulse,
-                                              minimum_mars_distance,
-                                              time_buffer,
                                               bodies,
-                                              benchmark_propagator_settings,
-                                              trajectory_parameters,
+                                              propagator_settings,
                                               are_dependent_variables_to_save,
                                               benchmark_output_path)
     # Extract benchmark states
@@ -338,7 +279,7 @@ if use_benchmark:
 ###########################################################################
 
 # Create problem without propagating
-hodographic_shaping_object = create_hodographic_shaping_object(trajectory_parameters,
+hodographic_shaping_object = Util.create_hodographic_shaping_object(trajectory_parameters,
                                                                bodies)
 
 # Prepares output path
@@ -347,7 +288,7 @@ if write_results_to_file:
 else:
     output_path = None
 # Retrieves analytical results and write them to a file
-get_hodographic_trajectory(hodographic_shaping_object,
+Util.get_hodographic_trajectory(hodographic_shaping_object,
                            trajectory_parameters,
                            specific_impulse,
                            output_path)
@@ -385,29 +326,25 @@ available_propagators = [propagation_setup.propagator.cowell,
                          propagation_setup.propagator.unified_state_model_modified_rodrigues_parameters,
                          propagation_setup.propagator.unified_state_model_exponential_map]
 # Define settings to loop over
-number_of_propagators = 7
+number_of_propagators = len(available_propagators)
 number_of_integrators = 5
-number_of_integrator_step_size_settings = 4
+
 # Loop over propagators
 for propagator_index in range(number_of_propagators):
     # Get current propagator, and define translational state propagation settings
     current_propagator = available_propagators[propagator_index]
-    translational_state_propagator_settings = propagation_setup.propagator.translational(central_bodies,
-                                                                                         acceleration_models,
-                                                                                         bodies_to_propagate,
-                                                                                         initial_state,
-                                                                                         termination_settings,
-                                                                                         current_propagator,
-                                                                                         dependent_variables_to_save)
-    # Note, the following line is needed to properly use the accelerations, and modify them in the Problem class
-    #translational_state_propagator_settings.recreate_state_derivative_models(bodies)
 
-    # Create list of propagators, adding mass, and define full propagation settings
-    propagator_settings_list = [translational_state_propagator_settings,
-                                mass_propagator_settings]
-    full_propagation_settings = propagation_setup.propagator.multitype(propagator_settings_list,
-                                                                       termination_settings,
-                                                                       dependent_variables_to_save)
+    # Define propagation settings
+    current_propagator_settings = Util.get_propagator_settings(
+        trajectory_parameters,
+        bodies,
+        initial_propagation_time,
+        specific_impulse,
+        vehicle_mass,
+        termination_settings,
+        dependent_variables_to_save,
+        current_propagator)
+
     # Loop over different integrators
     for integrator_index in range(number_of_integrators):
         # For RK4, more step sizes are used. NOTE TO STUDENTS, MODIFY THESE AS YOU SEE FIT!
@@ -431,25 +368,19 @@ for propagator_index in range(number_of_propagators):
                                                                        integrator_index,
                                                                        step_size_index,
                                                                        initial_propagation_time)
-            # Create Lunar Ascent Problem object
-            current_low_thrust_problem = LowThrustProblem(bodies,
-                                                          current_integrator_settings,
-                                                          full_propagation_settings,
-                                                          specific_impulse,
-                                                          minimum_mars_distance,
-                                                          time_buffer,
-                                                          True)
-            # Update thrust settings and evaluate fitness
-            current_low_thrust_problem.fitness(trajectory_parameters)
+            # Propagate dynamics
+            dynamics_simulator = numerical_simulation.SingleArcSimulator(
+                bodies, current_integrator_settings, current_propagator_settings, print_dependent_variable_data=False )
+
 
             ### OUTPUT OF THE SIMULATION ###
             # Retrieve propagated state and dependent variables
             # NOTE TO STUDENTS, the following retrieve the propagated states, converted to Cartesian states
-            state_history = current_low_thrust_problem.get_last_run_propagated_cartesian_state_history()
-            dependent_variable_history = current_low_thrust_problem.get_last_run_dependent_variable_history()
+            state_history = dynamics_simulator.state_history
+            unprocessed_state_history = dynamics_simulator.unprocessed_state_history
+            dependent_variable_history = dynamics_simulator.dependent_variable_history
 
             # Get the number of function evaluations (for comparison of different integrators)
-            dynamics_simulator = current_low_thrust_problem.get_last_run_dynamics_simulator()
             function_evaluation_dict = dynamics_simulator.cumulative_number_of_function_evaluations
             number_of_function_evaluations = list(function_evaluation_dict.values())[-1]
             # Add it to a dictionary
@@ -479,8 +410,7 @@ for propagator_index in range(number_of_propagators):
                 # the shorter step size. Therefore, the following lines of code will be forced to extrapolate the
                 # benchmark states (or dependent variables), producing a warning. Be aware of it!
                 for epoch in state_history.keys():
-                    state_difference[epoch] = state_history[epoch] - \
-                                              benchmark_state_interpolator.interpolate(epoch)
+                    state_difference[epoch] = state_history[epoch] - benchmark_state_interpolator.interpolate(epoch)
                 # Write differences with respect to the benchmarks to files
                 if write_results_to_file:
                     save2txt(state_difference, 'state_difference_wrt_benchmark.dat', output_path)
@@ -490,8 +420,7 @@ for propagator_index in range(number_of_propagators):
                     dependent_difference = dict()
                     # Loop over the propagated dependent variables and use the benchmark interpolators
                     for epoch in dependent_variable_history.keys():
-                        dependent_difference[epoch] = dependent_variable_history[epoch] - \
-                                                      benchmark_dependent_variable_interpolator.interpolate(epoch)
+                        dependent_difference[epoch] = dependent_variable_history[epoch] - benchmark_dependent_variable_interpolator.interpolate(epoch)
                     # Write differences with respect to the benchmarks to files
                     if write_results_to_file:
                         save2txt(dependent_difference, 'dependent_variable_difference_wrt_benchmark.dat', output_path)

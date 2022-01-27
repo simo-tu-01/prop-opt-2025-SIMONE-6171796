@@ -35,11 +35,11 @@ from tudatpy.kernel.numerical_simulation import environment
 from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.astro import element_conversion
 from tudatpy.kernel.math import interpolators
+from tudatpy.kernel.math import geometry
 
 ###########################################################################
-# USEFUL FUNCTIONS ########################################################
+# PROPAGATION SETTING UTILITIES ###########################################
 ###########################################################################
-
 
 def get_initial_state(simulation_start_epoch: float,
                       bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) -> np.ndarray:
@@ -67,8 +67,8 @@ def get_initial_state(simulation_start_epoch: float,
     radial_distance = spice_interface.get_average_radius('Earth') + 120.0E3
     latitude = np.deg2rad(0.0)
     longitude = np.deg2rad(68.75)
-    speed = 7.83E3
-    flight_path_angle = np.deg2rad(-1.5)
+    speed = 7.63E3
+    flight_path_angle = np.deg2rad(-0.8)
     heading_angle = np.deg2rad(34.37)
 
     # Convert spherical elements to body-fixed cartesian coordinates
@@ -272,6 +272,155 @@ def get_propagator_settings(shape_parameters,
                                                                      current_propagator,
                                                                      output_variables=dependent_variables_to_save)
     return propagator_settings
+
+
+###########################################################################
+# CAPSULE SHAPE/AERODYNAMICS UTILITIES ####################################
+###########################################################################
+
+
+def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometry.Capsule) \
+        -> tudatpy.kernel.numerical_simulation.environment.HypersonicLocalInclinationAnalysis:
+    """
+    Function that creates an aerodynamic database for a capsule, based on a set of shape parameters.
+
+    The Capsule shape consists of four separate geometrical components: a sphere segment for the nose, a torus segment
+    for the shoulder/edge, a conical frustum for the rear body, and a sphere segment for the rear cap (see Dirkx and
+    Mooij, 2016). The code used in this function discretizes these surfaces into a structured mesh of quadrilateral
+    panels. The parameters number_of_points and number_of_lines define the number of discretization points (for each
+    part) in both independent directions (lengthwise and circumferential). The list selectedMethods defines the type of
+    aerodynamic analysis method that is used.
+
+    Parameters
+    ----------
+    capsule_shape : tudatpy.kernel.math.geometry.Capsule
+        Object that defines the shape of the vehicle.
+
+    Returns
+    -------
+    hypersonic_local_inclination_analysis : tudatpy.kernel.environment.HypersonicLocalInclinationAnalysis
+        Database created through the local inclination analysis method.
+    """
+
+    # Define settings for surface discretization of the capsule
+    number_of_lines = [31, 31, 31, 11]
+    number_of_points = [31, 31, 31, 11]
+    # Set side of the vehicle (DO NOT CHANGE THESE: setting to true will turn parts of the vehicle 'inside out')
+    invert_order = [0, 0, 0, 0]
+
+    # Define moment reference point. NOTE: This value is chosen somewhat arbitrarily, and will only impact the
+    # results when you consider any aspects of moment coefficients
+    moment_reference = np.array([-0.6624, 0.0, 0.1369])
+
+    # Define independent variable values
+    independent_variable_data_points = []
+    # Mach
+    mach_points = environment.get_default_local_inclination_mach_points()
+    independent_variable_data_points.append(mach_points)
+    # Angle of attack
+    angle_of_attack_points = np.linspace(np.deg2rad(-40),np.deg2rad(40),17)
+    independent_variable_data_points.append(angle_of_attack_points)
+    # Angle of sideslip
+    angle_of_sideslip_points = environment.get_default_local_inclination_sideslip_angle_points()
+    independent_variable_data_points.append(angle_of_sideslip_points)
+
+    # Define local inclination method to use (index 0=Newtonian flow)
+    selected_methods = [[0, 0, 0, 0], [0, 0, 0, 0]]
+
+    # Get the capsule middle radius
+    capsule_middle_radius = capsule_shape.middle_radius
+    # Calculate reference area
+    reference_area = np.pi * capsule_middle_radius ** 2
+
+    # Create aerodynamic database
+    hypersonic_local_inclination_analysis = environment.HypersonicLocalInclinationAnalysis(
+        independent_variable_data_points,
+        capsule_shape,
+        number_of_lines,
+        number_of_points,
+        invert_order,
+        selected_methods,
+        reference_area,
+        capsule_middle_radius,
+        moment_reference)
+    return hypersonic_local_inclination_analysis
+
+
+def set_capsule_shape_parameters(shape_parameters: list,
+                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                                 capsule_density: float):
+    """
+    It computes and creates the properties of the capsule (shape, mass, aerodynamic coefficient interface...).
+
+    Parameters
+    ----------
+    shape_parameters : list of floats
+        List of shape parameters to be optimized.
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    capsule_density : float
+        Constant density of the vehicle.
+
+    Returns
+    -------
+    none
+    """
+    # Compute shape constraint
+    length_limit = shape_parameters[1] - shape_parameters[4] * (1 - np.cos(shape_parameters[3]))
+    length_limit /= np.tan(- shape_parameters[3])
+    # Add safety factor
+    length_limit -= 0.01
+    # Apply constraint
+    if shape_parameters[2] >= length_limit:
+        shape_parameters[2] = length_limit
+
+    # Create capsule
+    new_capsule = geometry.Capsule(*shape_parameters[0:5])
+    # Compute new body mass
+    new_capsule_mass = capsule_density * new_capsule.volume
+    # Set capsule mass
+    bodies.get_body('Capsule').set_constant_mass(new_capsule_mass)
+    # Create aerodynamic interface from shape parameters (this calls the local inclination analysis)
+    new_aerodynamic_coefficient_interface = get_capsule_coefficient_interface(new_capsule)
+    # Update the Capsule's aerodynamic coefficient interface
+    bodies.get_body('Capsule').aerodynamic_coefficient_interface = new_aerodynamic_coefficient_interface
+
+
+# NOTE TO STUDENTS: if and when making modifications to the capsule shape, do include them in this function and not in
+# the main code.
+def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                               shape_parameters: list,
+                               capsule_density: float):
+    """
+    It creates the capsule body object and adds it to the body system, setting its shape based on the shape parameters
+    provided.
+
+    Parameters
+    ----------
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    shape_parameters : list of floats
+        List of shape parameters to be optimized.
+    capsule_density : float
+        Constant density of the vehicle.
+
+    Returns
+    -------
+    none
+    """
+    # Create new vehicle object and add it to the existing system of bodies
+    bodies.create_empty_body('Capsule')
+    # Update the capsule shape parameters
+    set_capsule_shape_parameters(shape_parameters,
+                                 bodies,
+                                 capsule_density)
+
+
+
+###########################################################################
+# BENCHMARK UTILITIES #####################################################
+###########################################################################
+
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size,

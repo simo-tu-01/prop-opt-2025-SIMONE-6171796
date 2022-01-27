@@ -124,7 +124,6 @@ from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-from ShapeOptimizationProblem import add_capsule_to_body_system
 import ShapeOptimizationUtilities as Util
 
 ###########################################################################
@@ -144,7 +143,7 @@ shape_parameters = [8.148730872315355,
 # Choose whether benchmark is run
 use_benchmark = True
 # Choose whether output of the propagation is written to files
-write_results_to_file = False
+write_results_to_file = True
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
 
@@ -184,7 +183,7 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 # Create and add capsule to body system
 # NOTE TO STUDENTS: When making any modifications to the capsule vehicle, do NOT make them in this code, but in the
 # add_capsule_to_body_system function
-add_capsule_to_body_system(bodies,
+Util.add_capsule_to_body_system(bodies,
                            shape_parameters,
                            capsule_density)
 

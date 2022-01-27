@@ -29,10 +29,10 @@ import tudatpy
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.numerical_simulation import propagation_setup
+from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
-
-# Problem-specific imports
-import LowThrustProblem as LowThrust
+from tudatpy.kernel.trajectory_design import shape_based_thrust
+from tudatpy.kernel.trajectory_design import transfer_trajectory
 
 
 ###########################################################################
@@ -67,7 +67,7 @@ def get_termination_settings(trajectory_parameters,
     """
     # Create single PropagationTerminationSettings objects
     # Time
-    final_time = LowThrust.get_trajectory_final_time(trajectory_parameters,
+    final_time = get_trajectory_final_time(trajectory_parameters,
                                                      time_buffer)
     time_termination_settings = propagation_setup.propagator.time_termination(
         final_time,
@@ -187,17 +187,475 @@ def get_integrator_settings(propagator_index: int,
                                                        fixed_step_size)
     return integrator_settings
 
+def get_propagator_settings( trajectory_parameters,
+                             bodies,
+                             initial_propagation_time,
+                             constant_specific_impulse,
+                             vehicle_initial_mass,
+                             termination_settings,
+                             dependent_variables_to_save,
+                             current_propagator = propagation_setup.propagator.cowell ):
+    # Define bodies that are propagated and their central bodies of propagation
+    bodies_to_propagate = ['Vehicle']
+    central_bodies = ['Sun']
+    # Retrieve thrust acceleration
+    thrust_settings = get_hodograph_thrust_acceleration_settings(trajectory_parameters,
+                                                                 bodies,
+                                                                 constant_specific_impulse)
+    # Define accelerations acting on capsule
+    acceleration_settings_on_vehicle = {
+        'Sun': [propagation_setup.acceleration.point_mass_gravity()],
+        'Vehicle': [thrust_settings]
+    }
+    # Create global accelerations dictionary
+    acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
+    acceleration_models = propagation_setup.create_acceleration_models(
+        bodies,
+        acceleration_settings,
+        bodies_to_propagate,
+        central_bodies)
+
+    # Retrieve initial state
+    initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
+                                                 bodies,
+                                                 initial_propagation_time)
+
+    # Create propagation settings for the benchmark
+    translational_propagator_settings = propagation_setup.propagator.translational(
+        central_bodies,
+        acceleration_models,
+        bodies_to_propagate,
+        initial_state,
+        termination_settings,
+        current_propagator,
+        output_variables=dependent_variables_to_save)
+
+    # Create mass rate model
+    mass_rate_settings_on_vehicle = {'Vehicle': [propagation_setup.mass_rate.from_thrust()]}
+    mass_rate_models = propagation_setup.create_mass_rate_models(bodies,
+                                                                 mass_rate_settings_on_vehicle,
+                                                                 acceleration_models)
+    # Create mass propagator settings (same for all propagations)
+    mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
+                                                                 mass_rate_models,
+                                                                 np.array([vehicle_initial_mass]),
+                                                                 termination_settings)
+
+    # Create multi-type propagation settings list
+    propagator_settings_list = [translational_propagator_settings,
+                                mass_propagator_settings]
+
+    # Create multi-type propagation settings object
+    propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
+                                                                 termination_settings,
+                                                                 dependent_variables_to_save)
+
+    return propagator_settings
+
+
+
+###########################################################################
+# HODOGRAPH-SPECIFIC FUNCTIONS ############################################
+###########################################################################
+
+
+def get_trajectory_time_of_flight(trajectory_parameters: list) -> float:
+    """
+    Returns the time of flight in seconds.
+
+    Parameters
+    ----------
+    trajectory_parameters : list of floats
+        List of trajectory parameters to optimize.
+
+    Returns
+    -------
+    float
+        Time of flight [s].
+    """
+    return trajectory_parameters[1] * constants.JULIAN_DAY
+
+
+def get_trajectory_initial_time(trajectory_parameters: list,
+                                buffer_time: float = 0.0) -> float:
+    """
+    Returns the time of flight in seconds.
+
+    Parameters
+    ----------
+    trajectory_parameters : list of floats
+        List of trajectory parameters to optimize.
+    buffer_time : float (default: 0.0)
+        Delay between start of the hodographic trajectory and the start of the propagation.
+
+    Returns
+    -------
+    float
+        Initial time of the hodographic trajectory [s].
+    """
+    return trajectory_parameters[0] * constants.JULIAN_DAY + buffer_time
+
+
+def get_trajectory_final_time(trajectory_parameters: list,
+                              buffer_time: float = 0.0) -> float:
+    """
+    Returns the time of flight in seconds.
+
+    Parameters
+    ----------
+    trajectory_parameters : list of floats
+        List of trajectory parameters to optimize.
+    buffer_time : float (default: 0.0)
+        Delay between start of the hodographic trajectory and the start of the propagation.
+
+    Returns
+    -------
+    float
+        Final time of the hodographic trajectory [s].
+    """
+    # Get initial time
+    initial_time = get_trajectory_initial_time(trajectory_parameters)
+    return initial_time + get_trajectory_time_of_flight(trajectory_parameters) - buffer_time
+
+
+def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping,
+                               trajectory_parameters: list,
+                               specific_impulse: float,
+                               output_path: str = None):
+    """
+    It computes the analytical hodographic trajectory and saves the results to a file, if desired.
+
+    This function analytically calculates the hodographic trajectory from the Hodographic Shaping object. It
+    retrieves both the trajectory and the acceleration profile; if desired, both are saved to files as follows:
+
+    * hodographic_trajectory.dat: Cartesian states of semi-analytical trajectory;
+    * hodographic_thrust_acceleration.dat: Thrust acceleration in inertial, Cartesian, coordinates, along the
+    semi-analytical trajectory.
+
+    NOTE: The independent variable (first column) does not represent the usual time (seconds since J2000), but instead
+    denotes the time since departure.
+
+    Parameters
+    ----------
+    shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping
+        Hodographic shaping object.
+    trajectory_parameters : list of floats
+        List of trajectory parameters to be optimized.
+    specific_impulse : float
+        Constant specific impulse of the spacecraft.
+    output_path : str (default: None)
+        If and where to save the benchmark results (if None, results are NOT written).
+
+    Returns
+    -------
+    none
+    """
+    # Set time parameters
+    start_time = 0.0
+    final_time = get_trajectory_time_of_flight(trajectory_parameters)
+    # Set number of data points
+    number_of_data_points = 10000
+    # Compute step size
+    step_size = (final_time - start_time) / (number_of_data_points - 1)
+    # Create epochs vector
+    epochs = np.linspace(start_time,
+                         final_time,
+                         number_of_data_points)
+    # Create specific impulse lambda function
+    specific_impulse_function = lambda t: specific_impulse
+    # Retrieve thrust acceleration profile from shaping object
+    # NOTE TO THE STUDENTS: do not uncomment
+    # thrust_acceleration_profile = shaping_object.get_thrust_acceleration_profile(
+    #     epochs,
+    #     specific_impulse_function)
+    # Retrieve trajectory from shaping object
+    trajectory_shape = shaping_object.get_trajectory(epochs)
+    # If desired, save results to files
+    if output_path is not None:
+        # NOTE TO THE STUDENTS: do not uncomment
+        # save2txt(thrust_acceleration_profile,
+        #          'hodographic_thrust_acceleration.dat',
+        #          output_path)
+        save2txt(trajectory_shape,
+                 'hodographic_trajectory.dat',
+                 output_path)
+
+
+def get_radial_velocity_shaping_functions(trajectory_parameters: list,
+                                          frequency: float,
+                                          scale_factor: float,
+                                          time_of_flight: float,
+                                          number_of_revolutions: int) -> tuple:
+    """
+    Retrieves the radial velocity shaping functions (lowest and highest order in Gondelach and Noomen, 2015) and returns
+    them together with the free coefficients.
+
+    Parameters
+    ----------
+    trajectory_parameters : list
+        List of trajectory parameters to optimize.
+    frequency: float
+        Frequency of the highest-order methods.
+    scale_factor: float
+        Scale factor of the highest-order methods.
+    time_of_flight: float
+        Time of flight of the trajectory.
+    number_of_revolutions: int
+        Number of revolutions around the Sun (currently unused).
+
+    Returns
+    -------
+    tuple
+        A tuple composed by two lists: the radial velocity shaping functions and their free coefficients.
+    """
+    # Retrieve default methods (lowest-order in Gondelach and Noomen, 2015)
+    radial_velocity_shaping_functions = shape_based_thrust.recommended_radial_hodograph_functions(time_of_flight)
+    # Add degrees of freedom (highest-order in Gondelach and Noomen, 2015)
+    radial_velocity_shaping_functions.append(shape_based_thrust.hodograph_scaled_power_sine(
+        exponent=1.0,
+        frequency=0.5 * frequency,
+        scale_factor=scale_factor))
+    radial_velocity_shaping_functions.append(shape_based_thrust.hodograph_scaled_power_cosine(
+        exponent=1.0,
+        frequency=0.5 * frequency,
+        scale_factor=scale_factor))
+    # Set free parameters
+    free_coefficients = trajectory_parameters[3:5]
+    return (radial_velocity_shaping_functions,
+            free_coefficients)
+
+
+def get_normal_velocity_shaping_functions(trajectory_parameters: list,
+                                          frequency: float,
+                                          scale_factor: float,
+                                          time_of_flight: float,
+                                          number_of_revolutions: int) -> tuple:
+    """
+    Retrieves the normal velocity shaping functions (lowest and highest order in Gondelach and Noomen, 2015) and returns
+    them together with the free coefficients.
+
+    Parameters
+    ----------
+    trajectory_parameters : list
+        List of trajectory parameters to optimize.
+    frequency: float
+        Frequency of the highest-order methods.
+    scale_factor: float
+        Scale factor of the highest-order methods.
+    time_of_flight: float
+        Time of flight of the trajectory.
+    number_of_revolutions: int
+        Number of revolutions around the Sun (currently unused).
+
+    Returns
+    -------
+    tuple
+        A tuple composed by two lists: the normal velocity shaping functions and their free coefficients.
+    """
+    # Retrieve default methods (lowest-order in Gondelach and Noomen, 2015)
+    normal_velocity_shaping_functions = shape_based_thrust.recommended_normal_hodograph_functions(time_of_flight)
+    # Add degrees of freedom (highest-order in Gondelach and Noomen, 2015)
+    normal_velocity_shaping_functions.append(shape_based_thrust.hodograph_scaled_power_sine(
+        exponent=1.0,
+        frequency=0.5 * frequency,
+        scale_factor=scale_factor))
+    normal_velocity_shaping_functions.append(shape_based_thrust.hodograph_scaled_power_cosine(
+        exponent=1.0,
+        frequency=0.5 * frequency,
+        scale_factor=scale_factor))
+    # Set free parameters
+    free_coefficients = trajectory_parameters[5:7]
+    return (normal_velocity_shaping_functions,
+            free_coefficients)
+
+
+def get_axial_velocity_shaping_functions(trajectory_parameters: list,
+                                         frequency: float,
+                                         scale_factor: float,
+                                         time_of_flight: float,
+                                         number_of_revolutions: int) -> tuple:
+    """
+    Retrieves the axial velocity shaping functions (lowest and highest order in Gondelach and Noomen, 2015) and returns
+    them together with the free coefficients.
+
+    Parameters
+    ----------
+    trajectory_parameters : list
+        List of trajectory parameters to optimize.
+    frequency: float
+        Frequency of the highest-order methods.
+    scale_factor: float
+        Scale factor of the highest-order methods.
+    time_of_flight: float
+        Time of flight of the trajectory.
+    number_of_revolutions: int
+        Number of revolutions around the Sun.
+
+    Returns
+    -------
+    tuple
+        A tuple composed by two lists: the axial velocity shaping functions and their free coefficients.
+    """
+    # Retrieve default methods (lowest-order in Gondelach and Noomen, 2015)
+    axial_velocity_shaping_functions = shape_based_thrust.recommended_axial_hodograph_functions(
+        time_of_flight,
+        number_of_revolutions)
+    # Add degrees of freedom (highest-order in Gondelach and Noomen, 2015)
+    exponent = 4.0
+    axial_velocity_shaping_functions.append(shape_based_thrust.hodograph_scaled_power_cosine(
+        exponent=exponent,
+        frequency=(number_of_revolutions + 0.5) * frequency,
+        scale_factor=scale_factor ** exponent))
+    axial_velocity_shaping_functions.append(shape_based_thrust.hodograph_scaled_power_sine(
+        exponent=exponent,
+        frequency=(number_of_revolutions + 0.5) * frequency,
+        scale_factor=scale_factor ** exponent))
+    # Set free parameters
+    free_coefficients = trajectory_parameters[7:9]
+    return (axial_velocity_shaping_functions,
+            free_coefficients)
+
+
+def create_hodographic_shaping_object(trajectory_parameters: list,
+                                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
+        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
+    """
+    It creates and returns the hodographic shaping object, based on the trajectory parameters.
+
+    Parameters
+    ----------
+    trajectory_parameters : list
+        List of trajectory parameters to be optimized.
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+
+    Returns
+    -------
+    hodographic_shaping_object : tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping
+        Hodographic shaping object.
+    """
+    # Time settings
+    initial_time = get_trajectory_initial_time(trajectory_parameters)
+    time_of_flight = get_trajectory_time_of_flight(trajectory_parameters)
+    final_time = get_trajectory_final_time(trajectory_parameters)
+    # Number of revolutions
+    number_of_revolutions = int(trajectory_parameters[2])
+    # Compute relevant frequency and scale factor for shaping functions
+    frequency = 2.0 * np.pi / time_of_flight
+    scale_factor = 1.0 / time_of_flight
+    # Retrieve shaping functions and free parameters
+    radial_velocity_shaping_functions, radial_free_coefficients = get_radial_velocity_shaping_functions(
+        trajectory_parameters,
+        frequency,
+        scale_factor,
+        time_of_flight,
+        number_of_revolutions)
+    normal_velocity_shaping_functions, normal_free_coefficients = get_normal_velocity_shaping_functions(
+        trajectory_parameters,
+        frequency,
+        scale_factor,
+        time_of_flight,
+        number_of_revolutions)
+    axial_velocity_shaping_functions, axial_free_coefficients = get_axial_velocity_shaping_functions(
+        trajectory_parameters,
+        frequency,
+        scale_factor,
+        time_of_flight,
+        number_of_revolutions)
+    # Retrieve boundary conditions and central body gravitational parameter
+    initial_state = bodies.get_body('Earth').state_in_base_frame_from_ephemeris(initial_time)
+    final_state = bodies.get_body('Mars').state_in_base_frame_from_ephemeris(final_time)
+    gravitational_parameter = bodies.get_body('Sun').gravitational_parameter
+    # Create and return shape-based method
+    hodographic_shaping_object = shape_based_thrust.HodographicShaping(initial_state,
+                                                                       final_state,
+                                                                       time_of_flight,
+                                                                       gravitational_parameter,
+                                                                       number_of_revolutions,
+                                                                       radial_velocity_shaping_functions,
+                                                                       normal_velocity_shaping_functions,
+                                                                       axial_velocity_shaping_functions,
+                                                                       radial_free_coefficients,
+                                                                       normal_free_coefficients,
+                                                                       axial_free_coefficients)
+    return hodographic_shaping_object
+
+
+def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
+                                               bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                                               specific_impulse: float) \
+        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
+    """
+    It extracts the acceleration settings resulting from the hodographic trajectory and returns the equivalent thrust
+    acceleration settings object.
+
+    Parameters
+    ----------
+    trajectory_parameters : list
+        List of trajectory parameters to be optimized.
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    specific_impulse : float
+        Constant specific impulse of the spacecraft.
+
+    Returns
+    -------
+    tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings
+        Thrust acceleration settings object.
+    """
+    # Create shaping object
+    shaping_object = create_hodographic_shaping_object(trajectory_parameters,
+                                                       bodies)
+    # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
+    # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
+    # trajectory and the beginning of the simulation
+    time_offset = get_trajectory_initial_time(trajectory_parameters)
+    # Create specific impulse lambda function
+    specific_impulse_function = lambda t: specific_impulse
+    # Return acceleration settings
+    return transfer_trajectory.get_low_thrust_acceleration_settings(shaping_object,
+                                                                   bodies,
+                                                                   'Vehicle',
+                                                                   specific_impulse_function,
+                                                                   time_offset)
+
+
+def get_hodograph_state_at_epoch(trajectory_parameters: list,
+                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                                 epoch: float) -> np.ndarray:
+    """
+    It retrieves the Cartesian state, expressed in the inertial frame, at a given epoch of the analytical trajectory.
+
+    Parameters
+    ----------
+    trajectory_parameters : list
+        List of trajectory parameters to be optimized.
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+
+    Returns
+    -------
+    np.ndarray
+        Cartesian state in the inertial frame of the spacecraft at the given epoch.
+    """
+    # Create shaping object
+    shaping_object = create_hodographic_shaping_object(trajectory_parameters,
+                                                       bodies)
+    # Define current hodograph time
+    hodograph_time = epoch - get_trajectory_initial_time(trajectory_parameters)
+    return shaping_object.get_state(hodograph_time)
+
+###########################################################################
+# BENCHMARK UTILITIES #####################################################
+###########################################################################
+
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
-			simulation_start_epoch: float,
-                        specific_impulse: float,
-                        minimum_mars_distance: float,
-                        time_buffer: float,
+			            simulation_start_epoch: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
                         tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
-                        trajectory_parameters: list,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
     """
@@ -215,7 +673,7 @@ def generate_benchmarks(benchmark_step_size: float,
     ----------
     simulation_start_epoch : float
         The start time of the simulation in seconds.
-    specific_impulse : float
+    constant_specific_impulse : float
         Constant specific impulse of the vehicle.  
     minimum_mars_distance : float
         Minimum distance from Mars at which the propagation stops.
@@ -244,7 +702,7 @@ def generate_benchmarks(benchmark_step_size: float,
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
-    first_benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
+    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         first_benchmark_step_size,
         propagation_setup.integrator.RKCoefficientSets.rkdp_87,
@@ -252,20 +710,15 @@ def generate_benchmarks(benchmark_step_size: float,
         first_benchmark_step_size,
         np.inf,
         np.inf)
-    # Create Low Thrust Problem object for first benchmark
-    first_benchmark = LowThrust.LowThrustProblem(bodies,
-                                                 first_benchmark_integrator_settings,
-                                                 benchmark_propagator_settings,
-                                                 specific_impulse,
-                                                 minimum_mars_distance,
-                                                 time_buffer,
-                                                 perform_propagation=True)
+
     print('Running first benchmark...')
-    # Set new trajectory parameters and evaluate fitness
-    first_benchmark.fitness(trajectory_parameters)
+    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        bodies,
+        benchmark_integrator_settings,
+        benchmark_propagator_settings, print_dependent_variable_data=True)
 
     # Create integrator settings for the second benchmark in the same way
-    second_benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
+    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         second_benchmark_step_size,
         propagation_setup.integrator.RKCoefficientSets.rkdp_87,
@@ -273,22 +726,17 @@ def generate_benchmarks(benchmark_step_size: float,
         second_benchmark_step_size,
         np.inf,
         np.inf)
-    # Create Low Thrust Problem object for second benchmark
-    second_benchmark = LowThrust.LowThrustProblem(bodies,
-                                                  second_benchmark_integrator_settings,
-                                                  benchmark_propagator_settings,
-                                                  specific_impulse,
-                                                  minimum_mars_distance,
-                                                  time_buffer,
-                                                  perform_propagation=True)
+
     print('Running second benchmark...')
-    # Set new trajectory parameters and evaluate fitness
-    second_benchmark.fitness(trajectory_parameters)
+    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        bodies,
+        benchmark_integrator_settings,
+        benchmark_propagator_settings, print_dependent_variable_data=False)
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
     # Retrieve state history
-    first_benchmark_states = first_benchmark.get_last_run_propagated_state_history()
-    second_benchmark_states = second_benchmark.get_last_run_propagated_state_history()
+    first_benchmark_states = first_dynamics_simulator.state_history
+    second_benchmark_states = second_dynamics_simulator.state_history
     # Write results to files
     if output_path is not None:
         save2txt(first_benchmark_states, 'benchmark_1_states.dat', output_path)
@@ -300,8 +748,8 @@ def generate_benchmarks(benchmark_step_size: float,
     ### DO THE SAME FOR DEPENDENT VARIABLES ###
     if are_dependent_variables_present:
         # Retrieve dependent variable history
-        first_benchmark_dependent_variable = first_benchmark.get_last_run_dependent_variable_history()
-        second_benchmark_dependent_variable = second_benchmark.get_last_run_dependent_variable_history()
+        first_benchmark_dependent_variable = first_dynamics_simulator.dependent_variable_history
+        second_benchmark_dependent_variable = second_dynamics_simulator.dependent_variable_history
         # Write results to file
         if output_path is not None:
             save2txt(first_benchmark_dependent_variable, 'benchmark_1_dependent_variables.dat', output_path)
