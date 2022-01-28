@@ -124,7 +124,7 @@ from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-import ShapeOptimizationUtilities as Util
+import CapsuleEntryUtilities as Util
 
 ###########################################################################
 # DEFINE GLOBAL SETTINGS ##################################################
