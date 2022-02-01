@@ -1,5 +1,5 @@
 """
-Copyright (c) 2010-2021, Delft University of Technology
+Copyright (c) 2010-2022, Delft University of Technology
 All rights reserved
 
 This file is part of the Tudat. Redistribution and use in source and
@@ -15,37 +15,37 @@ Last name: ***COMPLETE HERE***
 Student number: ***COMPLETE HERE***
 
 This module computes the dynamics of an interplanetary low-thrust trajectory, using a thrust profile determined from
-a Hodographic shaping method (see Gondelach and Noomen, 2015). This file propagates the dynamics using a variety of 
-integrator and propagator settings (see comments under "RUN SIMULATION FOR VARIOUS SETTINGS"). For each run, the
-differences w.r.t. a benchmark propagation are computed, providing a proxy for setting quality. The benchmark settings
-are currently defined in semi-randomly, and are to be analyzed/modified.
+a semi-analytical Hodographic shaping method (see Gondelach and Noomen, 2015). This file propagates the dynamics
+using a variety of  integrator and propagator settings. For each run, the differences w.r.t. a benchmark propagation are
+computed, providing a proxy for setting quality. The benchmark settings are currently defined semi-randomly, and are to be
+analyzed/modified.
 
-The low-thrust trajectory computed by the shape-based method starts at the Earth's center of mass, and terminates at
-Mars's center of mass.
+The semi-analytical trajectory of the vehicle is determined by its departure and arrival time (which define the initial and final states)
+as well as the free parameters of the shaping method. The free parameters of the shaping method defined here are the same
+as for the 'higher-order solution' in Section V.A of Gondelach and Noomen (2015). The free parameters define the amplitude
+of specific types of velocity shaping functions. The low-thrust hodographic trajectory is parameterized by the values of
+the variable trajectory_parameters (see below). The low-thrust trajectory computed by the shape-based method starts
+at the Earth's center of mass, and terminates at Mars's center of mass.
 
-The vehicle starts on the Hodographic low-thrust trajectory, 30 days (defined by the time_buffer variable) after it
-'departs' the Earth's center of mass.
+The semi-analytical model is used to compute the thrust as a function of time (along the ideal semi-analytical trajectory).
+This function is then used to define a thrust model in the numerical propagation
 
-The propagation is terminated as soon as one of the following conditions is met (ses 
+In the propagation, the vehicle starts on the Hodographic low-thrust trajectory, 30 days
+(defined by the time_buffer variable) after it 'departs' the Earth's center of mass.
+
+The propagation is terminated as soon as one of the following conditions is met (see
 get_propagation_termination_settings() function):
 
 * Distance to Mars < 50000 km
 * Propagation time > Time-of-flight of hodographic trajectory
  
-This propagation assumes only point mass gravity by the Sun and thrust acceleration of the vehicle
-(see block 'CREATE ACCELERATIONS'). Both the translational dynamics and mass of the vehicle are propagated,
-using a fixed specific impulse.
+This propagation as provided assumes only point mass gravity by the Sun and thrust acceleration of the vehicle.
+Both the translational dynamics and mass of the vehicle are propagated, using a fixed specific impulse.
 
-The trajectory of the capsule is determined by its departure and arrival time (which define the initial and final states)
-as well as the free parameters of the shaping method. The free parameters of the shaping method defined here are the same
-as for the 'higher-order solution' in Section V.A of Gondelach and Noomen (2015). The free parameters define the amplitude
-of specific types of velocity shaping functions. The low-thrust hodographic trajectory is parameterized by the values of
-the vector trajectory_parameters.
-
-The entries of the vector 'trajectoryParameters' contains the following:
+The entries of the vector 'trajectory_parameters' contains the following:
 * Entry 0: Departure time (from Earth's center-of-mass) in Julian days since J2000
 * Entry 1: Time-of-flight from Earth's center-of-mass to Mars' center-of-mass, in Julian days
-* Entry 2: Number of revolutions
+* Entry 2: Number of revolutions around the Sun
 * Entry 3,4: Free parameters for radial shaping functions
 * Entry 5,6: Free parameters for normal shaping functions
 * Entry 7,8: Free parameters for axial shaping functions
@@ -57,17 +57,18 @@ Details on the outputs written by this file can be found:
     get_hodographic_trajectory() function
 
 Frequent warnings and/or errors that might pop up:
+
 * One frequent warning could be the following (mock values):
     "Warning in interpolator, requesting data point outside of boundaries, requested data at 7008 but limit values are
     0 and 7002, applying extrapolation instead."
-It can happen that the benchmark ends earlier than the regular simulation, due to the smaller step size. Therefore,
-the code will be forced to extrapolate the benchmark states (or dependent variables) to compare them to the
-simulation output, producing a warning. This warning can be deactivated by forcing the interpolator to use the boundary
-value instead of extrapolating (extrapolation is the default behavior). This can be done by setting:
+
+    It can happen that the benchmark ends earlier than the regular simulation, due to the smaller step size. Therefore,
+    the code will be forced to extrapolate the benchmark states (or dependent variables) to compare them to the
+    simulation output, producing a warning. This warning can be deactivated by forcing the interpolator to use the boundary
+    value instead of extrapolating (extrapolation is the default behavior). This can be done by setting:
 
     interpolator_settings = interpolators.lagrange_interpolation(
-        8,
-        boundary_interpolation = interpolators.extrapolate_at_boundary)
+        8, boundary_interpolation = interpolators.extrapolate_at_boundary)
 
 * One frequent error could be the following:
     "Error, propagation terminated at t=4454.723896, returning propagation data up to current time."
@@ -92,7 +93,7 @@ which returns a boolean (false if any issues have occured)
 * A frequent issue can be that a simulation with certain settings runs for too long (for instance if the time steo
 becomes excessively small). To prevent this, you can add an additional termination setting (on top of the existing ones!)
 
-    cpu_tim_termination_settings = propagation_setup.propagator.cpu_time_termination(
+    cpu_time_termination_settings = propagation_setup.propagator.cpu_time_termination(
         maximum_cpu_time )
 
 where maximum_cpu_time is a varaiable (float) denoting the maximum time in seconds that your simulation is allowed to
@@ -174,7 +175,7 @@ minimum_mars_distance = 5.0E7
 time_buffer = 30.0 * constants.JULIAN_DAY
 # Time at which to start propagation
 initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
-                                                       time_buffer)
+                                                            time_buffer)
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
@@ -251,7 +252,7 @@ if use_benchmark:
     second_benchmark_state_history = benchmark_list[1]
     # Create state interpolator for first benchmark
     benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark_state_history,
-                                                                                     benchmark_interpolator_settings)
+                                                                                            benchmark_interpolator_settings)
 
     # Compare benchmark states, returning interpolator of the first benchmark
     benchmark_state_difference = Util.compare_benchmarks(first_benchmark_state_history,
@@ -280,7 +281,7 @@ if use_benchmark:
 
 # Create problem without propagating
 hodographic_shaping_object = Util.create_hodographic_shaping_object(trajectory_parameters,
-                                                               bodies)
+                                                                    bodies)
 
 # Prepares output path
 if write_results_to_file:
@@ -289,9 +290,9 @@ else:
     output_path = None
 # Retrieves analytical results and write them to a file
 Util.get_hodographic_trajectory(hodographic_shaping_object,
-                           trajectory_parameters,
-                           specific_impulse,
-                           output_path)
+                                trajectory_parameters,
+                                specific_impulse,
+                                output_path)
 
 ###########################################################################
 # RUN SIMULATION FOR VARIOUS SETTINGS #####################################

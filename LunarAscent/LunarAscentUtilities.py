@@ -264,10 +264,10 @@ def get_propagator_settings(thrust_parameters,
 
     # Define accelerations acting on vehicle
     thrust_settings = get_thrust_acceleration_model_from_parameters(
-            thrust_parameters,
-            bodies,
-            simulation_start_epoch,
-            constant_specific_impulse)
+        thrust_parameters,
+        bodies,
+        simulation_start_epoch,
+        constant_specific_impulse)
     acceleration_settings_on_vehicle = {
         'Moon': [propagation_setup.acceleration.point_mass_gravity()],
         'Vehicle': [thrust_settings]

@@ -564,7 +564,7 @@ def compare_benchmarks(first_benchmark: dict,
     # Calculate the difference between the states and dependent variables in an iterative manner
     for second_epoch in second_benchmark.keys():
         benchmark_difference[second_epoch] = benchmark_interpolator.interpolate(second_epoch) - \
-                                         second_benchmark[second_epoch]
+                                             second_benchmark[second_epoch]
     # Write results to files
     if output_path is not None:
         save2txt(benchmark_difference, filename, output_path)

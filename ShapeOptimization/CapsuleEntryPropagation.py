@@ -14,12 +14,14 @@ First name: ***COMPLETE HERE***
 Last name: ***COMPLETE HERE***
 Student number: ***COMPLETE HERE***
 
-This module is the main script that executes the propagation and optimization. It relies on two other modules, defined
-for a more practical organization of functions and classes, which are imported below.
+This module computes the dynamics of a capsule re-entering the atmosphere of the Earth, using a variety of integrator
+and propagator settings.  For each run, the differences w.r.t. a benchmark propagation are computed, providing a proxy
+for setting quality. The benchmark settings are currently defined semi-randomly, and are to be analyzed/modified.
 
-This function computes the dynamics of a capsule re-entering the atmosphere of the Earth, using a variety of integrator
-and propagator settings (see comments under "RUN SIMULATION FOR VARIOUS SETTINGS"). For each run, the differences w.r.t. 
-a benchmark propagation are computed, providing a proxy for setting quality.
+The trajectory of the capsule is heavily dependent on the shape and orientation of the vehicle. Here, the shape is
+determined here by the five parameters, which are used to compute the aerodynamic accelerations on the vehicle using a
+modified Newtonian flow (see Dirkx and Mooij, "Conceptual Shape Optimization of Entry Vehicles" 2018). The bank angle
+and sideslip angles are set to zero. The vehicle shape and angle of attack are defined by values in the vector shape_parameters.
 
 The vehicle starts 120 km above the surface of the planet, with a speed of 7.83 km/s in an Earth-fixed frame (see
 getInitialState function).
@@ -31,21 +33,13 @@ get_propagation_termination_settings() function):
 
 This propagation assumes only point mass gravity by the Earth and aerodynamic accelerations.
 
-The trajectory of the capsule is heavily dependent on the shape and orientation of the vehicle. Here, the shape is
-determined here by the five parameters, which are used to compute the aerodynamic accelerations on the vehicle using a 
-modified Newtonian flow (see also Dirkx and Mooij, 2018). The bank angle and sideslip angles are set to zero.
-The vehicle shape and angle of attack are defined by values in the vector shapeParameters.
-
-The entries of the vector 'shapeParameters' contains the following:
+The entries of the vector 'shape_parameters' contains the following:
 - Entry 0:  Nose radius
 - Entry 1:  Middle radius
 - Entry 2:  Rear length
 - Entry 3:  Rear angle
 - Entry 4:  Side radius
 - Entry 5:  Constant Angle of Attack
-
-The benchmark is run if the variable use_benchmark is True.
-The output is written if the variable write_results_to_file is true.
 
 Details on the outputs written by this file can be found:
 - benchmark data: comments for 'generateBenchmarks' function
@@ -184,8 +178,8 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 # NOTE TO STUDENTS: When making any modifications to the capsule vehicle, do NOT make them in this code, but in the
 # add_capsule_to_body_system function
 Util.add_capsule_to_body_system(bodies,
-                           shape_parameters,
-                           capsule_density)
+                                shape_parameters,
+                                capsule_density)
 
 ###########################################################################
 # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
@@ -367,32 +361,32 @@ for propagator_index in range(number_of_propagators):
                 save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
                 save2txt(dict_to_write, 'ancillary_simulation_info.txt',   output_path)
 
-            # Compare the simulation to the benchmarks and write differences to files
-            if use_benchmark:
+        # Compare the simulation to the benchmarks and write differences to files
+        if use_benchmark:
+            # Initialize containers
+            state_difference = dict()
+
+            # Loop over the propagated states and use the benchmark interpolators
+            # NOTE TO STUDENTS: it can happen that the benchmark ends earlier than the regular simulation, due to
+            # the shorter step size. Therefore, the following lines of code will be forced to extrapolate the
+            # benchmark states (or dependent variables), producing a warning. Be aware of it!
+            for epoch in state_history.keys():
+                state_difference[epoch] = state_history[epoch] - benchmark_state_interpolator.interpolate(epoch)
+
+            # Write differences with respect to the benchmarks to files
+            if write_results_to_file:
+                save2txt(state_difference, 'state_difference_wrt_benchmark.dat', output_path)
+
+            # Do the same for dependent variables, if present
+            if are_dependent_variables_to_save:
                 # Initialize containers
-                state_difference = dict()
-
-                # Loop over the propagated states and use the benchmark interpolators
-                # NOTE TO STUDENTS: it can happen that the benchmark ends earlier than the regular simulation, due to
-                # the shorter step size. Therefore, the following lines of code will be forced to extrapolate the
-                # benchmark states (or dependent variables), producing a warning. Be aware of it!
-                for epoch in state_history.keys():
-                    state_difference[epoch] = state_history[epoch] - benchmark_state_interpolator.interpolate(epoch)
-
+                dependent_difference = dict()
+                # Loop over the propagated dependent variables and use the benchmark interpolators
+                for epoch in dependent_variable_history.keys():
+                    dependent_difference[epoch] = dependent_variable_history[epoch] - benchmark_dependent_variable_interpolator.interpolate(epoch)
                 # Write differences with respect to the benchmarks to files
                 if write_results_to_file:
-                    save2txt(state_difference, 'state_difference_wrt_benchmark.dat', output_path)
-
-                # Do the same for dependent variables, if present
-                if are_dependent_variables_to_save:
-                    # Initialize containers
-                    dependent_difference = dict()
-                    # Loop over the propagated dependent variables and use the benchmark interpolators
-                    for epoch in dependent_variable_history.keys():
-                        dependent_difference[epoch] = dependent_variable_history[epoch] - benchmark_dependent_variable_interpolator.interpolate(epoch)
-                    # Write differences with respect to the benchmarks to files
-                    if write_results_to_file:
-                        save2txt(dependent_difference, 'dependent_variable_difference_wrt_benchmark.dat',   output_path)
+                    save2txt(dependent_difference, 'dependent_variable_difference_wrt_benchmark.dat',   output_path)
 
 # Print the ancillary information
 print('\n### ANCILLARY SIMULATION INFORMATION ###')

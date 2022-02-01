@@ -1,5 +1,5 @@
 """
-Copyright (c) 2010-2021, Delft University of Technology
+Copyright (c) 2010-2022, Delft University of Technology
 All rights reserved
 
 This file is part of the Tudat. Redistribution and use in source and
@@ -14,14 +14,13 @@ First name: ***COMPLETE HERE***
 Last name: ***COMPLETE HERE***
 Student number: ***COMPLETE HERE***
 
-This module is the main script that executes the propagation and optimization. It relies on two other modules, defined
-for a more practical organization of functions and classes, which are imported below.
+This module computes the dynamics of a Lunar ascent vehicle, according to a simple thrust guidance law.  This file propagates the dynamics
+using a variety of integrator and propagator settings. For each run, the differences w.r.t. a benchmark propagation are
+computed, providing a proxy for setting quality. The benchmark settings are currently defined semi-randomly, and are to be
+analyzed/modified.
 
-This function computes the dynamics of a lunar ascent vehicle, starting at zero velocity on the Moon's surface, using a
-variety of integrator and propagator settings (see comments under "RUN SIMULATION FOR VARIOUS SETTINGS").
-For each run, the differences w.r.t. a  benchmark propagation are computed, providing a proxy for setting quality.
- 
-The propagation starts near the lunar surface, with a speed relative to the Moon of 10 m/s.
+The propagtion starts with a small velocity close to the surface of the Moon, and an initial flight path angle of 90
+degrees. Making (small) adjustments to this initial state is permitted if properly argued in the report.
 
 The propagation is terminated as soon as one of the following conditions is met:
 
@@ -30,23 +29,20 @@ The propagation is terminated as soon as one of the following conditions is met:
 - Propagation time > 3600 s
 - Vehicle mass < 2250 kg
 
-This propagation assumes only point mass gravity by the Moon and thrust acceleration of the vehicle
-(see block 'CREATE ACCELERATIONS'). Both the translational dynamics and mass of the vehicle are propagated,
-using a fixed specific impulse.
+This propagation assumes only point mass gravity by the Moon and thrust acceleration of the vehicle. Both the
+translational dynamics and mass of the vehicle are propagated, using a fixed specific impulse.
 
-The thrust is computed based on a fixed thrust magnitude, and a variable thrust direction. The trust direction is defined
+The thrust is computed based on a constant thrust magnitude, and a variable thrust direction. The trust direction is defined
 on a set of 5 nodes, spread evenly in time. At each node, a thrust angle theta is defined, which gives the angle between
-the -z and y angles in the ascent vehicle's vertical frame (see Mooij, 1994). Between the nodes, the thrust is linearly
-interpolated. If the propagation goes beyond the bounds of the nodes, the boundary value is used. The thrust profile
-is parameterized by the values of the vector thrustParameters
+the -z and y angles in the ascent vehicle's vertical frame (see Mooij, 1994, "The motion of a vehicle in a planetary
+atmosphere" ). Between the nodes, the thrust is linearly interpolated. If the propagation goes beyond the bounds of
+the nodes, the boundary value is used. The thrust profile is parameterized by the values of the vector thrust_parameters.
+The thrust guidance is implemented in the LunarAscentThrustGuidance class in the LunarAscentUtilities.py file.
 
-The entries of the vector 'thrustParameters' contains the following:
+The entries of the vector 'thrust_parameters' contains the following:
 - Entry 0: Constant thrust magnitude
 - Entry 1: Constant spacing in time between nodes
 - Entry 2-6: Thrust angle theta, at nodes 1-5 (in order)
-
-The benchmark is run if the variable use_benchmark is True.
-The output is written if the variable write_results_to_file is true.
 
 Details on the outputs written by this file can be found:
 - benchmark data: comments for 'generateBenchmarks' function

@@ -68,7 +68,7 @@ def get_termination_settings(trajectory_parameters,
     # Create single PropagationTerminationSettings objects
     # Time
     final_time = get_trajectory_final_time(trajectory_parameters,
-                                                     time_buffer)
+                                           time_buffer)
     time_termination_settings = propagation_setup.propagator.time_termination(
         final_time,
         terminate_exactly_on_final_condition=False)
@@ -614,10 +614,10 @@ def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
     specific_impulse_function = lambda t: specific_impulse
     # Return acceleration settings
     return transfer_trajectory.get_low_thrust_acceleration_settings(shaping_object,
-                                                                   bodies,
-                                                                   'Vehicle',
-                                                                   specific_impulse_function,
-                                                                   time_offset)
+                                                                    bodies,
+                                                                    'Vehicle',
+                                                                    specific_impulse_function,
+                                                                    time_offset)
 
 
 def get_hodograph_state_at_epoch(trajectory_parameters: list,
@@ -652,7 +652,7 @@ def get_hodograph_state_at_epoch(trajectory_parameters: list,
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
-			            simulation_start_epoch: float,
+                        simulation_start_epoch: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
                         tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
@@ -697,7 +697,7 @@ def generate_benchmarks(benchmark_step_size: float,
     """
     ### CREATION OF THE TWO BENCHMARKS ###
     # Define benchmarks' step sizes
-    first_benchmark_step_size = benchmark_step_size  
+    first_benchmark_step_size = benchmark_step_size
     second_benchmark_step_size = 2.0 * first_benchmark_step_size
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
@@ -790,7 +790,7 @@ def compare_benchmarks(first_benchmark: dict,
     """
     # Create 8th-order Lagrange interpolator for first benchmark
     benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
-                                                                               interpolators.lagrange_interpolation(8))
+                                                                                      interpolators.lagrange_interpolation(8))
     # Calculate the difference between the benchmarks
     print('Calculating benchmark differences...')
     # Initialize difference dictionaries
