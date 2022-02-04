@@ -114,6 +114,7 @@ from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
 from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
+from tudatpy.kernel.numerical_simulation import environment
 from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
 
@@ -180,6 +181,9 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 Util.add_capsule_to_body_system(bodies,
                                 shape_parameters,
                                 capsule_density)
+environment.save_vehicle_mesh_to_file(
+    bodies.get_body('Capsule').aerodynamic_coefficient_in   terface,
+    current_dir + '/SimulationOutput/')
 
 ###########################################################################
 # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
