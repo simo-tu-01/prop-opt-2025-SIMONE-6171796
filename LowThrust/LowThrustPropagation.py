@@ -119,9 +119,6 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 import numpy as np
 import os
 
-import sys
-sys.path.insert(0, '/home/dominic/Software/tudat-bundle/build-tudat-bundle-Desktop-Default/tudatpy/')
-
 # Tudatpy imports
 from tudatpy.io import save2txt
 from tudatpy.kernel import constants
