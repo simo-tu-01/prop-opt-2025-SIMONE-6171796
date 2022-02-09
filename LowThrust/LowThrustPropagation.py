@@ -139,9 +139,6 @@ import LowThrustUtilities as Util
 spice_interface.load_standard_kernels()
 # NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
 # ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER.
-# CONSIDER ALL PARAMETERS FROM YOUR SPECIFIC INPUT NUMBER, EVEN IF THE
-# SIZE OF THE NEW LIST trajectory_parameters WILL BE DIFFERENT FROM THE
-# SIZE OF THE ONE REPORTED BELOW. THIS IS ALREADY ACCOUNTED FOR IN THE CODE.
 trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
                          37073942.58665284 / constants.JULIAN_DAY,
                          0,
@@ -185,9 +182,6 @@ bodies_to_create = ['Earth',
 global_frame_origin = 'SSB'
 global_frame_orientation = 'ECLIPJ2000'
 # Create body settings
-# N.B.: all the bodies added after this function is called will automatically
-# be placed in the same reference frame, which is the same for the full
-# system of bodies
 body_settings = environment_setup.get_default_body_settings(bodies_to_create,
                                                             global_frame_origin,
                                                             global_frame_orientation)

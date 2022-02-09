@@ -127,7 +127,8 @@ import LunarAscentUtilities as Util
 
 # Load spice kernels
 spice_interface.load_standard_kernels()
-# Define problem independent variables
+# NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
+# ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER
 thrust_parameters = [15629.13262285292,
                      21.50263026822358,
                      -0.03344538412056863,
@@ -169,9 +170,6 @@ global_frame_origin = 'Moon'
 global_frame_orientation = 'ECLIPJ2000'
 
 # Create body settings
-# N.B.: all the bodies added after this function is called will automatically
-# be placed in the same reference frame, which is the same for the full
-# system of bodies
 body_settings = environment_setup.get_default_body_settings(
     bodies_to_create,
     global_frame_origin,

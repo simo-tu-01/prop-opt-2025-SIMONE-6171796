@@ -163,9 +163,6 @@ global_frame_origin = 'Earth'
 global_frame_orientation = 'J2000'
 
 # Create body settings
-# N.B.: all the bodies added after this function is called will automatically
-# be placed in the same reference frame, which is the same for the full
-# system of bodies
 body_settings = environment_setup.get_default_body_settings(
     bodies_to_create,
     global_frame_origin,
