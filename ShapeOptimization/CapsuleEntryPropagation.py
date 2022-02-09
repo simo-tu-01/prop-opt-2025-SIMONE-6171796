@@ -44,6 +44,7 @@ The entries of the vector 'shape_parameters' contains the following:
 Details on the outputs written by this file can be found:
 - benchmark data: comments for 'generateBenchmarks' function
 - results for integrator/propagator variations: comments under "RUN SIMULATION FOR VARIOUS SETTINGS"
+- files defining the points and surface normals of the mesg used for the aerodynamic analysis (save_vehicle_mesh_to_file)
 
 Frequent warnings and/or errors that might pop up:
 * One frequent warning could be the following (mock values):
@@ -181,9 +182,7 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 Util.add_capsule_to_body_system(bodies,
                                 shape_parameters,
                                 capsule_density)
-environment.save_vehicle_mesh_to_file(
-    bodies.get_body('Capsule').aerodynamic_coefficient_in   terface,
-    current_dir + '/SimulationOutput/')
+
 
 ###########################################################################
 # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
@@ -364,6 +363,8 @@ for propagator_index in range(number_of_propagators):
                 save2txt(unprocessed_state_history, 'unprocessed_state_history.dat', output_path)
                 save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
                 save2txt(dict_to_write, 'ancillary_simulation_info.txt',   output_path)
+                environment.save_vehicle_mesh_to_file(
+                    bodies.get_body('Capsule').aerodynamic_coefficient_interface, output_path)
 
         # Compare the simulation to the benchmarks and write differences to files
         if use_benchmark:
