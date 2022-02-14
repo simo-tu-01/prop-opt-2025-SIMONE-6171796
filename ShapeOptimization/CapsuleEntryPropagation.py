@@ -360,32 +360,32 @@ for propagator_index in range(number_of_propagators):
                 environment.save_vehicle_mesh_to_file(
                     bodies.get_body('Capsule').aerodynamic_coefficient_interface, output_path)
 
-        # Compare the simulation to the benchmarks and write differences to files
-        if use_benchmark:
-            # Initialize containers
-            state_difference = dict()
-
-            # Loop over the propagated states and use the benchmark interpolators
-            # NOTE TO STUDENTS: it can happen that the benchmark ends earlier than the regular simulation, due to
-            # the shorter step size. Therefore, the following lines of code will be forced to extrapolate the
-            # benchmark states (or dependent variables), producing a warning. Be aware of it!
-            for epoch in state_history.keys():
-                state_difference[epoch] = state_history[epoch] - benchmark_state_interpolator.interpolate(epoch)
-
-            # Write differences with respect to the benchmarks to files
-            if write_results_to_file:
-                save2txt(state_difference, 'state_difference_wrt_benchmark.dat', output_path)
-
-            # Do the same for dependent variables, if present
-            if are_dependent_variables_to_save:
+            # Compare the simulation to the benchmarks and write differences to files
+            if use_benchmark:
                 # Initialize containers
-                dependent_difference = dict()
-                # Loop over the propagated dependent variables and use the benchmark interpolators
-                for epoch in dependent_variable_history.keys():
-                    dependent_difference[epoch] = dependent_variable_history[epoch] - benchmark_dependent_variable_interpolator.interpolate(epoch)
+                state_difference = dict()
+
+                # Loop over the propagated states and use the benchmark interpolators
+                # NOTE TO STUDENTS: it can happen that the benchmark ends earlier than the regular simulation, due to
+                # the shorter step size. Therefore, the following lines of code will be forced to extrapolate the
+                # benchmark states (or dependent variables), producing a warning. Be aware of it!
+                for epoch in state_history.keys():
+                    state_difference[epoch] = state_history[epoch] - benchmark_state_interpolator.interpolate(epoch)
+
                 # Write differences with respect to the benchmarks to files
                 if write_results_to_file:
-                    save2txt(dependent_difference, 'dependent_variable_difference_wrt_benchmark.dat',   output_path)
+                    save2txt(state_difference, 'state_difference_wrt_benchmark.dat', output_path)
+
+                # Do the same for dependent variables, if present
+                if are_dependent_variables_to_save:
+                    # Initialize containers
+                    dependent_difference = dict()
+                    # Loop over the propagated dependent variables and use the benchmark interpolators
+                    for epoch in dependent_variable_history.keys():
+                        dependent_difference[epoch] = dependent_variable_history[epoch] - benchmark_dependent_variable_interpolator.interpolate(epoch)
+                    # Write differences with respect to the benchmarks to files
+                    if write_results_to_file:
+                        save2txt(dependent_difference, 'dependent_variable_difference_wrt_benchmark.dat',   output_path)
 
 # Print the ancillary information
 print('\n### ANCILLARY SIMULATION INFORMATION ###')
