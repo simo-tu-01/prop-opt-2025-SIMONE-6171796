@@ -236,18 +236,23 @@ def get_propagator_settings(shape_parameters,
                             simulation_start_epoch,
                             termination_settings,
                             dependent_variables_to_save,
-                            current_propagator = propagation_setup.propagator.cowell ):
+                            current_propagator = propagation_setup.propagator.cowell,
+                            model_choice = 0 ):
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Capsule']
     central_bodies = ['Earth']
 
-    # Define accelerations acting on capsule
-    acceleration_settings_on_vehicle = {
-        'Earth': [propagation_setup.acceleration.point_mass_gravity(),
-                  propagation_setup.acceleration.aerodynamic()]
-    }
-    # Create acceleration models.
+    # Define accelerations for the nominal case
+    acceleration_settings_on_vehicle = {'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(2, 2),
+                                                  propagation_setup.acceleration.aerodynamic()]}
+    # Here different acceleration models are defined
+    if model_choice == 1:
+        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.point_mass_gravity()
+    elif model_choice == 2:
+        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)
+
+    # Create global accelerations' dictionary
     acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
     acceleration_models = propagation_setup.create_acceleration_models(
         bodies,
@@ -570,3 +575,50 @@ def compare_benchmarks(first_benchmark: dict,
         save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference
+
+
+def compare_models(first_model: dict,
+                   second_model: dict,
+                   interpolation_epochs: np.ndarray,
+                   output_path: str,
+                   filename: str) -> dict:
+    """
+    It compares the results of two runs with different model settings.
+    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
+    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
+    filename and placed in the directory output_path.
+    Parameters
+    ----------
+    first_model : dict
+        State (or dependent variable history) from the first run.
+    second_model : dict
+        State (or dependent variable history) from the second run.
+    interpolation_epochs : np.ndarray
+        Vector of epochs at which the two runs are compared.
+    output_path : str
+        If and where to save the benchmark results (if None, results are NOT written).
+    filename : str
+        Name of the output file.
+    Returns
+    -------
+    model_difference : dict
+        Interpolated difference between the two simulations' state (or dependent variable) history.
+    """
+    # Create interpolator settings
+    interpolator_settings = interpolators.lagrange_interpolation(
+        8, boundary_interpolation=interpolators.use_boundary_value)
+    # Create 8th-order Lagrange interpolator for both cases
+    first_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        first_model, interpolator_settings)
+    second_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        second_model, interpolator_settings)
+    # Calculate the difference between the first and second model at specific epochs
+    model_difference = {epoch: second_interpolator.interpolate(epoch) - first_interpolator.interpolate(epoch)
+                        for epoch in interpolation_epochs}
+    # Write results to files
+    if output_path is not None:
+        save2txt(model_difference,
+                 filename,
+                 output_path)
+    # Return the model difference
+    return model_difference
