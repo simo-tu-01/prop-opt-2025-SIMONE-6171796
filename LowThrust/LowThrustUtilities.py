@@ -195,7 +195,8 @@ def get_propagator_settings( trajectory_parameters,
                              termination_settings,
                              dependent_variables_to_save,
                              current_propagator = propagation_setup.propagator.cowell,
-                             model_choice = 0 ):
+                             model_choice = 0,
+                             initial_state_perturbation = np.zeros( 6 ) ):
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Sun']
@@ -229,7 +230,7 @@ def get_propagator_settings( trajectory_parameters,
     # Retrieve initial state
     initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
                                                  bodies,
-                                                 initial_propagation_time)
+                                                 initial_propagation_time) + + initial_state_perturbation
 
     # Create propagation settings for the benchmark
     translational_propagator_settings = propagation_setup.propagator.translational(

@@ -257,7 +257,8 @@ def get_propagator_settings(thrust_parameters,
                             termination_settings,
                             dependent_variables_to_save,
                             current_propagator = propagation_setup.propagator.cowell,
-                            model_choice = 0 ):
+                            model_choice = 0,
+                            initial_state_perturbation = np.zeros( 6 ) ):
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Vehicle']
@@ -292,7 +293,7 @@ def get_propagator_settings(thrust_parameters,
         central_bodies)
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch, bodies)
+    initial_state = get_initial_state(simulation_start_epoch, bodies) + initial_state_perturbation
 
     # Create propagation settings for the benchmark
     translational_propagator_settings = propagation_setup.propagator.translational(
@@ -324,6 +325,7 @@ def get_propagator_settings(thrust_parameters,
     propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
                                                                  termination_settings,
                                                                  dependent_variables_to_save)
+
 
     return propagator_settings
 

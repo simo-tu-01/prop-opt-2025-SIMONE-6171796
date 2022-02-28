@@ -237,7 +237,8 @@ def get_propagator_settings(shape_parameters,
                             termination_settings,
                             dependent_variables_to_save,
                             current_propagator = propagation_setup.propagator.cowell,
-                            model_choice = 0 ):
+                            model_choice = 0,
+                            initial_state_perturbation = np.zeros( 6 ) ):
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Capsule']
@@ -266,7 +267,7 @@ def get_propagator_settings(shape_parameters,
         silence_warnings=True )
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch,bodies)
+    initial_state = get_initial_state(simulation_start_epoch,bodies) + initial_state_perturbation
 
     # Create propagation settings for the benchmark
     propagator_settings = propagation_setup.propagator.translational(central_bodies,

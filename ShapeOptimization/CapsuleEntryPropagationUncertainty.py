@@ -109,6 +109,7 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # General imports
 import numpy as np
 import os
+import random
 
 # Tudatpy imports
 from tudatpy.io import save2txt
@@ -164,13 +165,19 @@ capsule_density = 250.0  # kg m-3
 simulation_results = dict()
 
 # Set number of models to loop over
-number_of_models = 5
+number_of_cases = 100
 
 # Set the interpolation step at which different runs are compared
 output_interpolation_step = 2.0  # s
 
-# Loop over different model settings
-for model_test in range(number_of_models):
+random.seed( 42 )
+
+for run in range(number_of_cases):
+    print(run)
+    initial_state_deviation = np.zeros( 6 )
+    if run > 0:
+        for i in range( 3 ):
+            initial_state_deviation[ i ] = random.gauss( 0, 1 )
 
     # Define settings for celestial bodies
     bodies_to_create = ['Earth']
@@ -183,20 +190,6 @@ for model_test in range(number_of_models):
         bodies_to_create,
         global_frame_origin,
         global_frame_orientation)
-
-    # For case 3, a different rotational model is used for the Earth
-    if model_test == 3:
-        body_settings.get('Earth').rotation_model_settings = environment_setup.rotation_model.simple_from_spice(
-            global_frame_orientation, 'IAU_Earth', 'IAU_Earth', simulation_start_epoch)
-
-    # For case 4, a different atmospheric model is used
-    if model_test == 4:
-        body_settings.get("Earth").atmosphere_settings = environment_setup.atmosphere.exponential(
-            scale_height = 7.2E3,
-            surface_density = 1.225,
-            constant_temperature = 290,
-            specific_gas_constant = 287.06,
-            ratio_specific_heats = 1.4 )
 
     # Create bodies
     bodies = environment_setup.create_system_of_bodies(body_settings)
@@ -230,7 +223,8 @@ for model_test in range(number_of_models):
                                                        termination_settings,
                                                        dependent_variables_to_save,
                                                        current_propagator=propagation_setup.propagator.cowell,
-                                                       model_choice = model_test  )
+                                                       model_choice = 0,
+                                                       initial_state_perturbation=initial_state_deviation)
 
     # Create integrator settings
     integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
@@ -247,13 +241,10 @@ for model_test in range(number_of_models):
 
 
     # Save results to a dictionary
-    simulation_results[model_test] = [state_history, dependent_variable_history]
+    simulation_results[run] = [state_history, dependent_variable_history]
 
     # Get output path
-    if model_test == 0:
-        subdirectory = '/NominalCase/'
-    else:
-        subdirectory = '/Model_' + str(model_test) + '/'
+    subdirectory = '/UncertaintyAnalysis/'
 
     # Decide if output writing is required
     if write_results_to_file:
@@ -263,8 +254,8 @@ for model_test in range(number_of_models):
 
     # If desired, write output to a file
     if write_results_to_file:
-        save2txt(state_history, 'state_history.dat', output_path)
-        save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
+        save2txt(state_history, 'state_history_' + str(run) + '.dat', output_path)
+        save2txt(dependent_variable_history, 'dependent_variable_history' + str(run) + '.dat', output_path)
 
 """
 NOTE TO STUDENTS
@@ -274,9 +265,9 @@ You can use this dictionary to make all the cross-comparison that you deem neces
 every case with respect to the "nominal" one.
 """
 # Compare all the model settings with the nominal case
-for model_test in range(1, number_of_models):
+for run in range(1, number_of_cases):
     # Get output path
-    output_path = current_dir + '/Model_' + str(model_test) + '/'
+    output_path = current_dir +  '/UncertaintyAnalysis/'
 
     # Set time limits to avoid numerical issues at the boundaries due to the interpolation
     nominal_state_history = simulation_results[0][0]
@@ -284,8 +275,8 @@ for model_test in range(1, number_of_models):
     nominal_times = list(nominal_state_history.keys())
 
     # Retrieve current state and dependent variable history
-    current_state_history = simulation_results[model_test][0]
-    current_dependent_variable_history = simulation_results[model_test][1]
+    current_state_history = simulation_results[run][0]
+    current_dependent_variable_history = simulation_results[run][1]
     current_times = list(current_state_history.keys())
 
     # Get limit times at which both histories can be validly interpolated
@@ -297,17 +288,19 @@ for model_test in range(1, number_of_models):
     unfiltered_interpolation_epochs = [n for n in unfiltered_interpolation_epochs if n <= interpolation_upper_limit]
     interpolation_epochs = [n for n in unfiltered_interpolation_epochs if n >= interpolation_lower_limit]
 
+    #interpolation_epochs = unfiltered_interpolation_epochs
     # Compare state history
     state_difference_wrt_nominal = Util.compare_models(current_state_history,
                                                        simulation_results[0][0],
                                                        interpolation_epochs,
                                                        output_path,
-                                                       'state_difference_wrt_nominal_case.dat')
+                                                       'state_difference_wrt_nominal_case_' + str(run) + '.dat')
     # Compare dependent variable history
     dependent_variable_difference_wrt_nominal = Util.compare_models(current_dependent_variable_history,
                                                                     simulation_results[0][1],
                                                                     interpolation_epochs,
                                                                     output_path,
-                                                                    'dependent_variable_difference_wrt_nominal_case.dat')
+                                                                    'dependent_variable_difference_wrt_nominal_case_' + str(run) + '.dat')
+
 
 

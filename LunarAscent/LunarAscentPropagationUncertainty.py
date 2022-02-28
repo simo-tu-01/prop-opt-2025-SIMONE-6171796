@@ -1,5 +1,5 @@
 """
-Copyright (c) 2010-2021, Delft University of Technology
+Copyright (c) 2010-2022, Delft University of Technology
 All rights reserved
 
 This file is part of the Tudat. Redistribution and use in source and
@@ -9,42 +9,44 @@ a copy of the license with this file. If not, please or visit:
 http://tudat.tudelft.nl/LICENSE.
 
 AE4866 Propagation and Optimization in Astrodynamics
-Shape Optimization
+Lunar Ascent
 First name: ***COMPLETE HERE***
 Last name: ***COMPLETE HERE***
 Student number: ***COMPLETE HERE***
 
-This module computes the dynamics of a capsule re-entering the atmosphere of the Earth, using a variety of integrator
-and propagator settings.  For each run, the differences w.r.t. a benchmark propagation are computed, providing a proxy
-for setting quality. The benchmark settings are currently defined semi-randomly, and are to be analyzed/modified.
+This module computes the dynamics of a Lunar ascent vehicle, according to a simple thrust guidance law.  This file propagates the dynamics
+using a variety of integrator and propagator settings. For each run, the differences w.r.t. a benchmark propagation are
+computed, providing a proxy for setting quality. The benchmark settings are currently defined semi-randomly, and are to be
+analyzed/modified.
 
-The trajectory of the capsule is heavily dependent on the shape and orientation of the vehicle. Here, the shape is
-determined here by the five parameters, which are used to compute the aerodynamic accelerations on the vehicle using a
-modified Newtonian flow (see Dirkx and Mooij, "Conceptual Shape Optimization of Entry Vehicles" 2018). The bank angle
-and sideslip angles are set to zero. The vehicle shape and angle of attack are defined by values in the vector shape_parameters.
+The propagtion starts with a small velocity close to the surface of the Moon, and an initial flight path angle of 90
+degrees. Making (small) adjustments to this initial state is permitted if properly argued in the report.
 
-The vehicle starts 120 km above the surface of the planet, with a speed of 7.83 km/s in an Earth-fixed frame (see
-getInitialState function).
+The propagation is terminated as soon as one of the following conditions is met:
 
-The propagation is terminated as soon as one of the following conditions is met (see 
-get_propagation_termination_settings() function):
-- Altitude < 25 km
-- Propagation time > 24 hr
+- Altitude > 100 km
+- Altitude < 0 km
+- Propagation time > 3600 s
+- Vehicle mass < 2250 kg
 
-This propagation assumes only point mass gravity by the Earth and aerodynamic accelerations.
+This propagation assumes only point mass gravity by the Moon and thrust acceleration of the vehicle. Both the
+translational dynamics and mass of the vehicle are propagated, using a fixed specific impulse.
 
-The entries of the vector 'shape_parameters' contains the following:
-- Entry 0:  Nose radius
-- Entry 1:  Middle radius
-- Entry 2:  Rear length
-- Entry 3:  Rear angle
-- Entry 4:  Side radius
-- Entry 5:  Constant Angle of Attack
+The thrust is computed based on a constant thrust magnitude, and a variable thrust direction. The trust direction is defined
+on a set of 5 nodes, spread evenly in time. At each node, a thrust angle theta is defined, which gives the angle between
+the -z and y angles in the ascent vehicle's vertical frame (see Mooij, 1994, "The motion of a vehicle in a planetary
+atmosphere" ). Between the nodes, the thrust is linearly interpolated. If the propagation goes beyond the bounds of
+the nodes, the boundary value is used. The thrust profile is parameterized by the values of the vector thrust_parameters.
+The thrust guidance is implemented in the LunarAscentThrustGuidance class in the LunarAscentUtilities.py file.
+
+The entries of the vector 'thrust_parameters' contains the following:
+- Entry 0: Constant thrust magnitude
+- Entry 1: Constant spacing in time between nodes
+- Entry 2-6: Thrust angle theta, at nodes 1-5 (in order)
 
 Details on the outputs written by this file can be found:
 - benchmark data: comments for 'generateBenchmarks' function
 - results for integrator/propagator variations: comments under "RUN SIMULATION FOR VARIOUS SETTINGS"
-- files defining the points and surface normals of the mesg used for the aerodynamic analysis (save_vehicle_mesh_to_file)
 
 Frequent warnings and/or errors that might pop up:
 * One frequent warning could be the following (mock values):
@@ -103,11 +105,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
-# import sys
-# sys.path.insert(0, '/home/dominic/Software/tudat-bundle/build-tudat-bundle-Desktop-Default/tudatpy/')
-
 # General imports
 import numpy as np
+import random
 import os
 
 # Tudatpy imports
@@ -116,12 +116,11 @@ from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
 from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
-from tudatpy.kernel.numerical_simulation import environment
 from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
 
 # Problem-specific imports
-import CapsuleEntryUtilities as Util
+import LunarAscentUtilities as Util
 
 ###########################################################################
 # DEFINE GLOBAL SETTINGS ##################################################
@@ -131,16 +130,19 @@ import CapsuleEntryUtilities as Util
 spice_interface.load_standard_kernels()
 # NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
 # ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER
-shape_parameters = [8.148730872315355,
-                    2.720324489288032,
-                    0.2270385167794302,
-                    -0.4037530896422072,
-                    0.2781438040896319,
-                    0.4559143679738996]
+thrust_parameters = [15629.13262285292,
+                     21.50263026822358,
+                     -0.03344538412056863,
+                     -0.06456210720352829,
+                     0.3943447499535977,
+                     0.5358478897251189,
+                     -0.8607350478880107]
 # Choose whether benchmark is run
 use_benchmark = True
+run_integrator_analysis = True
+
 # Choose whether output of the propagation is written to files
-write_results_to_file = False
+write_results_to_file = True
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
 
@@ -150,33 +152,42 @@ current_dir = os.path.dirname(__file__)
 
 # Set simulation start epoch
 simulation_start_epoch = 0.0  # s
-# Set termination conditions
+# Vehicle settings
+vehicle_mass = 4.7E3  # kg
+vehicle_dry_mass = 2.25E3  # kg
+constant_specific_impulse = 311.0  # s
+# Fixed simulation termination settings
 maximum_duration = constants.JULIAN_DAY  # s
-termination_altitude = 25.0E3  # m
-# Set vehicle properties
-capsule_density = 250.0  # kg m-3
+termination_altitude = 100.0E3  # m
 
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
 
-# Initialize dictionary to save simulation output
+# Set number of models
+number_of_cases = 100
+
+# Initialize dictionary to store the results of the simulation
 simulation_results = dict()
 
-# Set number of models to loop over
-number_of_models = 5
-
 # Set the interpolation step at which different runs are compared
-output_interpolation_step = 2.0  # s
+output_interpolation_step = 1.0  # s
 
-# Loop over different model settings
-for model_test in range(number_of_models):
+random.seed( 42 )
+
+for run in range(number_of_cases):
+    print(run)
+    initial_state_deviation = np.zeros( 6 )
+    if run > 0:
+        for i in range( 3 ):
+            initial_state_deviation[ i ] = random.gauss( 0, 1 )
+    print(initial_state_deviation)
 
     # Define settings for celestial bodies
-    bodies_to_create = ['Earth']
+    bodies_to_create = ['Moon','Earth']
     # Define coordinate system
-    global_frame_origin = 'Earth'
-    global_frame_orientation = 'J2000'
+    global_frame_origin = 'Moon'
+    global_frame_orientation = 'ECLIPJ2000'
 
     # Create body settings
     body_settings = environment_setup.get_default_body_settings(
@@ -184,76 +195,57 @@ for model_test in range(number_of_models):
         global_frame_origin,
         global_frame_orientation)
 
-    # For case 3, a different rotational model is used for the Earth
-    if model_test == 3:
-        body_settings.get('Earth').rotation_model_settings = environment_setup.rotation_model.simple_from_spice(
-            global_frame_orientation, 'IAU_Earth', 'IAU_Earth', simulation_start_epoch)
-
-    # For case 4, a different atmospheric model is used
-    if model_test == 4:
-        body_settings.get("Earth").atmosphere_settings = environment_setup.atmosphere.exponential(
-            scale_height = 7.2E3,
-            surface_density = 1.225,
-            constant_temperature = 290,
-            specific_gas_constant = 287.06,
-            ratio_specific_heats = 1.4 )
-
     # Create bodies
     bodies = environment_setup.create_system_of_bodies(body_settings)
 
-    # Create and add capsule to body system
-    # NOTE TO STUDENTS: When making any modifications to the capsule vehicle, do NOT make them in this code, but in the
-    # add_capsule_to_body_system function
-    Util.add_capsule_to_body_system(bodies,
-                                    shape_parameters,
-                                    capsule_density)
-
+    # Create vehicle object and add it to the existing system of bodies
+    bodies.create_empty_body('Vehicle')
+    # Set mass of vehicle
+    bodies.get_body('Vehicle').mass = vehicle_mass
 
     ###########################################################################
-    # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
+    # CREATE PROPAGATOR SETTINGS ##############################################
     ###########################################################################
 
     # Retrieve termination settings
     termination_settings = Util.get_termination_settings(simulation_start_epoch,
                                                          maximum_duration,
-                                                         termination_altitude)
+                                                         termination_altitude,
+                                                         vehicle_dry_mass)
     # Retrieve dependent variables to save
     dependent_variables_to_save = Util.get_dependent_variable_save_settings()
     # Check whether there is any
     are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
-
-    # Create propagator settings for benchmark (Cowell)
-    propagator_settings = Util.get_propagator_settings(shape_parameters,
-                                                       bodies,
-                                                       simulation_start_epoch,
-                                                       termination_settings,
-                                                       dependent_variables_to_save,
-                                                       current_propagator=propagation_setup.propagator.cowell,
-                                                       model_choice = model_test  )
+    propagator_settings = Util.get_propagator_settings(
+        thrust_parameters,
+        bodies,
+        simulation_start_epoch,
+        constant_specific_impulse,
+        vehicle_mass,
+        termination_settings,
+        dependent_variables_to_save,
+        current_propagator=propagation_setup.propagator.cowell,
+        model_choice = 0,
+        initial_state_perturbation=initial_state_deviation)
 
     # Create integrator settings
-    integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
+    integrator_settings = Util.get_integrator_settings(
+        0, 0, 0, simulation_start_epoch)
 
-    # Create Shape Optimization Problem object
+    # Create Lunar Ascent Problem object
     dynamics_simulator = numerical_simulation.SingleArcSimulator(
         bodies, integrator_settings, propagator_settings, print_dependent_variable_data=False )
-
 
     ### OUTPUT OF THE SIMULATION ###
     # Retrieve propagated state and dependent variables
     state_history = dynamics_simulator.state_history
     dependent_variable_history = dynamics_simulator.dependent_variable_history
 
-
     # Save results to a dictionary
-    simulation_results[model_test] = [state_history, dependent_variable_history]
+    simulation_results[run] = [state_history, dependent_variable_history]
 
-    # Get output path
-    if model_test == 0:
-        subdirectory = '/NominalCase/'
-    else:
-        subdirectory = '/Model_' + str(model_test) + '/'
+    subdirectory = '/UncertaintyAnalysis/'
 
     # Decide if output writing is required
     if write_results_to_file:
@@ -263,8 +255,8 @@ for model_test in range(number_of_models):
 
     # If desired, write output to a file
     if write_results_to_file:
-        save2txt(state_history, 'state_history.dat', output_path)
-        save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
+        save2txt(state_history, 'state_history_' + str(run) + '.dat', output_path)
+        save2txt(dependent_variable_history, 'dependent_variable_history' + str(run) + '.dat', output_path)
 
 """
 NOTE TO STUDENTS
@@ -274,9 +266,9 @@ You can use this dictionary to make all the cross-comparison that you deem neces
 every case with respect to the "nominal" one.
 """
 # Compare all the model settings with the nominal case
-for model_test in range(1, number_of_models):
+for run in range(1, number_of_cases):
     # Get output path
-    output_path = current_dir + '/Model_' + str(model_test) + '/'
+    output_path = current_dir +  '/UncertaintyAnalysis/'
 
     # Set time limits to avoid numerical issues at the boundaries due to the interpolation
     nominal_state_history = simulation_results[0][0]
@@ -284,8 +276,8 @@ for model_test in range(1, number_of_models):
     nominal_times = list(nominal_state_history.keys())
 
     # Retrieve current state and dependent variable history
-    current_state_history = simulation_results[model_test][0]
-    current_dependent_variable_history = simulation_results[model_test][1]
+    current_state_history = simulation_results[run][0]
+    current_dependent_variable_history = simulation_results[run][1]
     current_times = list(current_state_history.keys())
 
     # Get limit times at which both histories can be validly interpolated
@@ -297,17 +289,18 @@ for model_test in range(1, number_of_models):
     unfiltered_interpolation_epochs = [n for n in unfiltered_interpolation_epochs if n <= interpolation_upper_limit]
     interpolation_epochs = [n for n in unfiltered_interpolation_epochs if n >= interpolation_lower_limit]
 
+    #interpolation_epochs = unfiltered_interpolation_epochs
     # Compare state history
     state_difference_wrt_nominal = Util.compare_models(current_state_history,
                                                        simulation_results[0][0],
                                                        interpolation_epochs,
                                                        output_path,
-                                                       'state_difference_wrt_nominal_case.dat')
+                                                       'state_difference_wrt_nominal_case_' + str(run) + '.dat')
     # Compare dependent variable history
     dependent_variable_difference_wrt_nominal = Util.compare_models(current_dependent_variable_history,
                                                                     simulation_results[0][1],
                                                                     interpolation_epochs,
                                                                     output_path,
-                                                                    'dependent_variable_difference_wrt_nominal_case.dat')
+                                                                    'dependent_variable_difference_wrt_nominal_case_' + str(run) + '.dat')
 
 
