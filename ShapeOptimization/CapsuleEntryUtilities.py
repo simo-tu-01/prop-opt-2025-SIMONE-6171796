@@ -237,7 +237,8 @@ def get_propagator_settings(shape_parameters,
                             termination_settings,
                             dependent_variables_to_save,
                             current_propagator = propagation_setup.propagator.cowell,
-                            model_choice = 0 ):
+                            model_choice = 0,
+                            initial_state_perturbation = np.zeros( 6 ) ):
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Capsule']
@@ -622,3 +623,216 @@ def compare_models(first_model: dict,
                  output_path)
     # Return the model difference
     return model_difference
+
+##########################################
+### Design Space Exploration Functions ###
+##########################################
+
+def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
+    """ 
+    Create ortogonal arrays from Latin Square in 4 successive steps:
+    
+    0) Take the column from the smaller array to create 2 new
+       columns and 2x new rows,
+    1) block 1 (1/2 rows): take old values 2x for new columns,
+    2) block 2 (1/2 rows): take old values, use Latin-Square for new
+       columns,
+    3) column 1: divide experiments into groups of 1,2.
+    """
+
+    ierror = 0
+    icount = 0
+    row_number = lambda icount, nlevels : nlevels**(icount+1)
+    col_number = lambda row_number : row_number-1
+
+    if nlevels == 2:
+        if nfact >= 2 and nfact <= 3:
+                icount = 1
+        elif nfact >= 4 and nfact <= 7:
+                icount = 2
+        elif nfact >= 8 and nfact <= 15:
+                icount = 3
+        elif nfact >= 16 and nfact <= 31:
+                icount = 4
+        elif nfact >= 32 and nfact <= 63:
+                icount = 5
+        elif nfact >= 64 and nfact <= 127:
+                icount = 6
+        elif nfact >= 128 and nfact <= 255:
+                icount = 7
+        else:
+                ierror = 1
+                Lx = np.zeros(1)
+                return Lx, ierror
+
+        Lxrow = row_number(icount, nlevels)
+        Lxcol = col_number(Lxrow)
+        Lx = np.zeros((Lxrow,Lxcol))
+        iaux = Lx.copy()
+        
+        ### Define the 2-level Latin Square ###
+        index_list = [0, 1]
+        two_level = [-1, 1]
+        LS = np.zeros((2,2))
+        LS[0,0] = -1
+        LS[0,1] =  1
+        LS[1,0] =  1
+        LS[1,1] = -1
+        
+        # In case of only one factor, copy the first Latin Square and leave the subroutine.
+        if icount == 0:
+                Lx[0,0] = LS[0,1]
+                Lx[1,0] = LS[0,1]
+                return Lx, ierror
+        
+        iaux[0,0] = -1
+        iaux[1,0] =  1
+        irow = 2
+        icol = 1
+
+        # Algorithm in Matlab starts from index 1
+        Lx = np.hstack((np.zeros((len(Lx), 1)), Lx))
+        Lx = np.vstack((np.zeros((1, len(Lx[0,:]))), Lx))
+        iaux = np.hstack((np.zeros((len(iaux), 1)), iaux))
+        iaux = np.vstack((np.zeros((1, len(iaux[0,:]))), iaux))
+        
+        ### Fill in orthogonal array ###
+        for i1 in range(1, icount + 1):
+                for i2 in range(1, irow + 1):
+                        for i3 in range(1, icol + 1):
+                                for p in range(2):
+                                        for q in range(2):
+                                                for r in range(2):
+                                                        #Block 1.
+                                                        if iaux[i2,i3] == two_level[q] and p == 0:
+                                                                Lx[i2,i3*2 + index_list[r]] = two_level[q] 
+                                                        #Block 2
+                                                        if iaux[i2,i3] == two_level[q] and p == 1:
+                                                                Lx[i2 + irow,i3*2 + index_list[r]] = LS[index_list[q], index_list[r]]
+                                        Lx[i2 + irow*p,1] = two_level[p]
+
+                if i1 == icount:
+                        # Deleting extra row from Matlab artifact
+                        Lx = np.delete(Lx, 0, 0)
+                        Lx = np.delete(Lx, 0, 1)
+                        return Lx, ierror
+                irow = 2*irow
+                icol = 2*icol+1
+                for i2 in range(1, irow + 1):
+                        for i3 in range(1, icol + 1):
+                                iaux[i2,i3] = Lx[i2,i3]
+
+    elif nlevels == 3:
+        if nfact >= 2 and nfact <= 4:
+                icount = 1
+        elif nfact >= 5 and nfact <= 13:
+                icount = 2
+        elif nfact >= 14 and nfact <= 40:
+                icount = 3
+        elif nfact >= 41 and nfact <= 121:
+                icount = 4
+        else:
+                ierror = 1
+                Lx = np.zeros(1)
+                return Lx, ierror
+
+        Lxrow = row_number(icount, nlevels)
+        Lxcol = col_number(Lxrow) // 2
+        Lx = np.zeros((Lxrow,Lxcol))
+        iaux = Lx.copy()
+        
+        ### Define the two three-level Latin Squares. Latin Square 1 ###
+        index_list = [0, 1, 2]
+        
+        LS1 = np.zeros((3,3))
+        three_level = [-1, 0, 1]
+        for i in range(3):
+                for j in range(3):
+                                LS1[i,index_list[j]] = three_level[(j+i)%3];
+         
+        ### ... and Latin Square 2. ###
+        LS2 = np.zeros((3,3))
+        three_level_2 = [-1, 1, 0]
+        for i in range(3):
+                for j in range(3):
+                        LS2[i, index_list[j]] = three_level_2[j-i]
+         
+        ### In case of only one factor, copy the first Latin Square and leave the subroutine. ###
+        if icount == 0:
+           Lx[0,0] = LS1[0,0];
+           Lx[1,0] = LS1[0,1];
+           Lx[2,0] = LS1[0,2];
+           return Lx, ierror
+
+        ### Define iaux for loops ###
+        iaux[0,0] = -1
+        iaux[1,0] = 0
+        iaux[2,0] =  1
+        irow = 3
+        icol = 1
+
+        #Algorithm in Matlab starts from index 1
+        Lx = np.hstack((np.zeros((len(Lx), 1)), Lx))
+        Lx = np.vstack((np.zeros((1, len(Lx[0,:]))), Lx))
+        iaux = np.hstack((np.zeros((len(iaux), 1)), iaux))
+        iaux = np.vstack((np.zeros((1, len(iaux[0,:]))), iaux))
+        
+        ### Filling in Lx ###
+        for i1 in range(1, icount + 1):
+                for i2 in range(1, irow + 1):
+                        for i3 in range(1, icol + 1):
+                                for p in range(3):
+                                        for q in range(3):
+                                                for r in range(3):
+                                                        #Block 1.
+                                                        if iaux[i2,i3] == three_level[q] and p == 0:
+                                                                Lx[i2 + irow*p,i3*3 + three_level[r]] = three_level[q] 
+                                                        #Block 2.
+                                                        if iaux[i2,i3] == three_level[q] and p == 1:
+                                                                Lx[i2 + irow*p,i3*3 + three_level[r]] = LS1[index_list[q], index_list[r]]
+                                                        #Block 3.
+                                                        if iaux[i2,i3] == three_level[q] and p == 2:
+                                                                Lx[i2 + irow*p,i3*3 + three_level[r]] = LS2[index_list[q], index_list[r]]
+                                        Lx[i2 + irow*p,1] = three_level[p]
+
+                if i1 == icount:
+                        # Deleting extra row from Matlab artifact
+                        Lx = np.delete(Lx, 0, 0)
+                        Lx = np.delete(Lx, 0, 1)
+                        return Lx, ierror
+                irow = 3*irow
+                icol = 3*icol+1
+                for i2 in range(1, irow + 1):
+                        for i3 in range(1, icol + 1):
+                                iaux[i2,i3] = Lx[i2,i3]
+    else:
+        print('These levels are not implemented yet. (You may wonder whether you need them)')
+
+
+
+def yates_array(no_of_levels : int, no_of_factors : int) -> np.array:
+    """
+    Function that creates a yates array according to yates algorithm
+
+    no_of_levels : The number of levels a factor can attain
+
+    no_of_factors : The number of design variables in the problem
+
+    """
+
+    levels = []
+    for i in range(no_of_levels+1):
+        levels.append(i)
+
+    n_rows = no_of_levels**no_of_factors
+    n_cols = no_of_factors
+    yates_array = np.zeros((n_rows, n_cols), dtype='int')
+
+    row_seg = n_rows
+    for col in range(n_cols):
+        repetition_amount = no_of_levels**col # Number of times to repeat the row segment to fill the array
+        row_seg = row_seg // no_of_levels # Get row segment divided by number of levels
+        for j in range(repetition_amount):
+            for i in range(no_of_levels): 
+                yates_array[(i*row_seg + j*row_seg*no_of_levels):((i+1)*row_seg + j*row_seg*no_of_levels), col] = levels[i] # from position i to position i + no_of_levels
+    return yates_array 

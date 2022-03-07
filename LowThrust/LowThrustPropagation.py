@@ -139,10 +139,17 @@ from LowThrustProblem import LowThrustProblem
 # Load spice kernels
 spice_interface.load_standard_kernels()
 
-# Choose whether benchmark is run
-use_benchmark = True
+trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
+                         37073942.58665284 / constants.JULIAN_DAY,
+                         0,
+                         2471.19649906354,
+                         4207.587982407276,
+                         -5594.040587888714,
+                         8748.139268525232,
+                         -3449.838496679572]
+
 # Choose whether output of the propagation is written to files
-write_results_to_file = True
+write_results_to_file = False
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
 
@@ -158,7 +165,9 @@ minimum_mars_distance = 5.0E7
 # Time since 'departure from Earth CoM' at which propagation starts (and similar
 # for arrival time)
 time_buffer = 30.0 * constants.JULIAN_DAY
-
+# Time at which to start propagation
+initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
+                                                            time_buffer)
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
@@ -187,35 +196,116 @@ bodies.get_body('Vehicle').mass = vehicle_mass
 # CREATE PROPAGATOR SETTINGS ##############################################
 ###########################################################################
 
-integrator_settings = Util.get_integrator_settings(
-    0, 0, 0, 0.0 )
+# Retrieve termination settings
+termination_settings = Util.get_termination_settings(trajectory_parameters,
+                                                     minimum_mars_distance,
+                                                     time_buffer)
+# Retrieve dependent variables to save
+dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+# Check whether there is any
+are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
-# Create Lunar Ascent Problem object
+
+################################
+### Design Space Exploration ###
+################################
+
+# Create Low Thrust Problem object
 decision_variable_range = \
-    ([0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000, -10000 ],
-     [6000.0, 800.0, 2.9999,10000,10000,10000,10000,10000,10000])
+    [[0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000], #Made list of lists instead of tuple, because the ffd requires a third level
+     [6000.0, 800.0, 2.9999,10000,10000,10000,10000,10000]]
 
-number_of_simulations = 1000
-number_of_parameters = len( decision_variable_range[0] )
+design_space_method = 'monte_carlo'
 
-trajectory_parameters =  [ 0 ] * number_of_parameters
+number_of_parameters = len(decision_variable_range[0])
+
+if design_space_method == 'monte_carlo':
+    number_of_simulations = 100
+    random_seed = 42
+    np.random.seed(random_seed)
+    print('\n Random Seed :', random_seed, '\n')
+
+elif design_space_method == 'fractional_factorial_design': 
+    no_of_factors = 4 
+    no_of_levels = 2
+    if no_of_levels == 3:
+        mid_range_list = [(decision_variable_range[1][i] + decision_variable_range[0][i])/2 for i in range(number_of_parameters)]
+        decision_variable_range.insert(1, mid_range_list)
+    FFD_array, ierror = Util.orth_arrays(no_of_factors, no_of_levels)
+    number_of_simulations = len(FFD_array)
+
+elif design_space_method == 'factorial_design':
+    no_of_levels = 3
+    no_of_factors = number_of_parameters
+    yates_array = Util.yates_array(no_of_levels, no_of_factors)
+    design_variable_arr = np.zeros((no_of_levels, no_of_factors))
+    for par in range(no_of_factors):
+        design_variable_arr[:, par] = np.linspace(decision_variable_range[0][par], decision_variable_range[1][par], no_of_levels, endpoint=True)
+        number_of_simulations = len(yates_array)
+
+parameters = np.zeros((number_of_simulations, number_of_parameters))
 
 for simulation_index in range(number_of_simulations):
+    print(simulation_index)
 
-    for parameter_index in range( number_of_parameters ):
-        trajectory_parameters[ parameter_index ] = np.random.uniform(
-            decision_variable_range[ 0 ][ parameter_index], decision_variable_range[ 1 ][ parameter_index] )
+    if design_space_method == 'factorial_design':
+        level_combination = yates_array[simulation_index, :]
+        for it, j in enumerate(level_combination): #Run through the row of levels from 0 to no_of_levels
+            trajectory_parameters[it] = design_variable_arr[j, it]
+    else:
+        for parameter_index in range(number_of_parameters):
+            if design_space_method == 'monte_carlo':
+                trajectory_parameters[parameter_index] = np.random.uniform(decision_variable_range[0][parameter_index], decision_variable_range[1][parameter_index])
+            elif design_space_method == 'fractional_factorial_design':
+                if FFD_array[simulation_index,parameter_index] == -1:
+                    trajectory_parameters[parameter_index] = decision_variable_range[0][parameter_index]
+                elif no_of_levels == 2 and FFD_array[simulation_index,parameter_index] == 1:
+                    trajectory_parameters[parameter_index] = decision_variable_range[1][parameter_index]
+                elif no_of_levels == 3 and FFD_array[simulation_index,parameter_index] == 0:
+                    trajectory_parameters[parameter_index] = decision_variable_range[1][parameter_index]
+                elif no_of_levels == 3 and FFD_array[simulation_index,parameter_index] == 1:
+                    trajectory_parameters[parameter_index] = decision_variable_range[2][parameter_index]
+                else:
+                    print('Error something went wrong with assigning parameters')
+
+    parameters[simulation_index, :] = trajectory_parameters.copy()
+
+    # Create integrator settings
+    integrator_settings = Util.get_integrator_settings(0, 0, 0, initial_propagation_time)
 
     current_low_thrust_problem = LowThrustProblem(bodies,
-                                                  integrator_settings,
-                                                  specific_impulse,
-                                                  minimum_mars_distance,
-                                                  time_buffer,
-                                                  vehicle_mass,
-                                                  decision_variable_range,
-                                                  True)
+                                                     integrator_settings,
+                                                     specific_impulse,
+                                                      minimum_mars_distance,
+                                                      time_buffer,
+                                                      vehicle_mass,
+                                                      decision_variable_range,
+                                                      True)
 
-    fitness = current_low_thrust_problem.fitness( trajectory_parameters )
+    fitness = current_low_thrust_problem.fitness(trajectory_parameters)
 
+    ### OUTPUT OF THE SIMULATION ###
+    # Retrieve propagated state and dependent variables
+    state_history = current_low_thrust_problem.get_last_run_dynamics_simulator().state_history
+    dependent_variable_history = current_low_thrust_problem.get_last_run_dynamics_simulator().dependent_variable_history
+
+    # Set time limits to avoid numerical issues at the boundaries due to the interpolation
+    propagation_times = list(state_history.keys())
+    limit_times = {propagation_times[3]: propagation_times[-3]}
+
+    # Get output path
+    subdirectory = '/DesignSpace_%s/Run_%s'%(design_space_method, simulation_index)
+
+    # Decide if output writing is required
+    if write_results_to_file:
+        output_path = current_dir + subdirectory
+    else:
+        output_path = None
+
+    # If desired, write output to a file
+    if write_results_to_file:
+        save2txt(state_history, 'state_history.dat', output_path)
+        save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
+        save2txt(limit_times, 'limit_times.dat', output_path)
 
 
