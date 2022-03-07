@@ -56,11 +56,11 @@ class ShapeOptimizationProblem:
     """
 
     def __init__(self,
-                 bodies,
-                 integrator_settings,
+                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                 integrator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings,
                  termination_settings,
-                 capsule_density,
-                 simulation_start_epoch,
+                 capsule_density: float,
+                 simulation_start_epoch: float,
                  decision_variable_range):
         """
         Constructor for the ShapeOptimizationProblem class.

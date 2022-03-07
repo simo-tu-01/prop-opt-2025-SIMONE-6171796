@@ -112,7 +112,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution()
+        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution()
 
     def get_last_run_propagated_state_history(self) -> dict:
         """
@@ -125,7 +125,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_equations_of_motion_numerical_solution_raw()
+        return self.dynamics_simulator_function( ).get_equations_of_motion_numerical_solution_raw()
 
     def get_last_run_dependent_variable_history(self) -> dict:
         """
@@ -137,7 +137,7 @@ class LowThrustProblem:
         -------
         dict
         """
-        return self.dynamics_simulator.get_dependent_variable_history()
+        return self.dynamics_simulator_function( ).get_dependent_variable_history()
 
     def get_last_run_dynamics_simulator(self) -> tudatpy.kernel.numerical_simulation.SingleArcSimulator:
         """
@@ -149,7 +149,7 @@ class LowThrustProblem:
         -------
         tudatpy.kernel.numerical_simulation.SingleArcSimulator
         """
-        return self.dynamics_simulator
+        return self.dynamics_simulator_function( )
 
     def fitness(self,
                 trajectory_parameters) -> float:

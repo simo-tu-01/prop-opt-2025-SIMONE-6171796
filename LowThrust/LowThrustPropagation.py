@@ -138,7 +138,8 @@ from LowThrustProblem import LowThrustProblem
 
 # Load spice kernels
 spice_interface.load_standard_kernels()
-
+# NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
+# ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER.
 trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
                          37073942.58665284 / constants.JULIAN_DAY,
                          0,
@@ -165,9 +166,7 @@ minimum_mars_distance = 5.0E7
 # Time since 'departure from Earth CoM' at which propagation starts (and similar
 # for arrival time)
 time_buffer = 30.0 * constants.JULIAN_DAY
-# Time at which to start propagation
-initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
-                                                            time_buffer)
+
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
 ###########################################################################
@@ -196,10 +195,6 @@ bodies.get_body('Vehicle').mass = vehicle_mass
 # CREATE PROPAGATOR SETTINGS ##############################################
 ###########################################################################
 
-# Retrieve termination settings
-termination_settings = Util.get_termination_settings(trajectory_parameters,
-                                                     minimum_mars_distance,
-                                                     time_buffer)
 # Retrieve dependent variables to save
 dependent_variables_to_save = Util.get_dependent_variable_save_settings()
 # Check whether there is any
