@@ -214,7 +214,7 @@ if design_space_method == 'monte_carlo':
     print('\n Random Seed :', random_seed, '\n')
 
 elif design_space_method == 'fractional_factorial_design': 
-    no_of_factors = 4 
+    no_of_factors = number_of_parameters
     no_of_levels = 2
     if no_of_levels == 3:
         mid_range_list = [(decision_variable_range[1][i] + decision_variable_range[0][i])/2 for i in range(number_of_parameters)]
@@ -287,10 +287,6 @@ for simulation_index in range(number_of_simulations):
     state_history = current_lunar_ascent_problem.get_last_run_dynamics_simulator().state_history
     dependent_variable_history = current_lunar_ascent_problem.get_last_run_dynamics_simulator().dependent_variable_history
 
-    # Set time limits to avoid numerical issues at the boundaries due to the interpolation
-    propagation_times = list(state_history.keys())
-    limit_times = {propagation_times[3]: propagation_times[-3]}
-
     # Get output path
     subdirectory = '/DesignSpace_%s/Run_%s'%(design_space_method, simulation_index)
 
@@ -304,4 +300,3 @@ for simulation_index in range(number_of_simulations):
     if write_results_to_file:
         save2txt(state_history, 'state_history.dat', output_path)
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
-        save2txt(limit_times, 'limit_times.dat', output_path)

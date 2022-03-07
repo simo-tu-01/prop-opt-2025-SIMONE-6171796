@@ -166,6 +166,9 @@ minimum_mars_distance = 5.0E7
 # Time since 'departure from Earth CoM' at which propagation starts (and similar
 # for arrival time)
 time_buffer = 30.0 * constants.JULIAN_DAY
+# Time at which to start propagation
+initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
+                                                            time_buffer)
 
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
@@ -210,7 +213,7 @@ decision_variable_range = \
     [[0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000], #Made list of lists instead of tuple, because the ffd requires a third level
      [6000.0, 800.0, 2.9999,10000,10000,10000,10000,10000]]
 
-design_space_method = 'monte_carlo'
+design_space_method = 'factorial_design'
 
 number_of_parameters = len(decision_variable_range[0])
 
@@ -221,7 +224,7 @@ if design_space_method == 'monte_carlo':
     print('\n Random Seed :', random_seed, '\n')
 
 elif design_space_method == 'fractional_factorial_design': 
-    no_of_factors = 4 
+    no_of_factors = number_of_parameters 
     no_of_levels = 2
     if no_of_levels == 3:
         mid_range_list = [(decision_variable_range[1][i] + decision_variable_range[0][i])/2 for i in range(number_of_parameters)]
@@ -230,7 +233,7 @@ elif design_space_method == 'fractional_factorial_design':
     number_of_simulations = len(FFD_array)
 
 elif design_space_method == 'factorial_design':
-    no_of_levels = 3
+    no_of_levels = 2
     no_of_factors = number_of_parameters
     yates_array = Util.yates_array(no_of_levels, no_of_factors)
     design_variable_arr = np.zeros((no_of_levels, no_of_factors))
@@ -284,10 +287,6 @@ for simulation_index in range(number_of_simulations):
     state_history = current_low_thrust_problem.get_last_run_dynamics_simulator().state_history
     dependent_variable_history = current_low_thrust_problem.get_last_run_dynamics_simulator().dependent_variable_history
 
-    # Set time limits to avoid numerical issues at the boundaries due to the interpolation
-    propagation_times = list(state_history.keys())
-    limit_times = {propagation_times[3]: propagation_times[-3]}
-
     # Get output path
     subdirectory = '/DesignSpace_%s/Run_%s'%(design_space_method, simulation_index)
 
@@ -301,6 +300,5 @@ for simulation_index in range(number_of_simulations):
     if write_results_to_file:
         save2txt(state_history, 'state_history.dat', output_path)
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
-        save2txt(limit_times, 'limit_times.dat', output_path)
 
 
