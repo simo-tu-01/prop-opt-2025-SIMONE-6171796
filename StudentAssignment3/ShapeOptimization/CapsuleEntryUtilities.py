@@ -630,6 +630,7 @@ def compare_models(first_model: dict,
 
 def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
     """ 
+    Erwin's Matlab Steps:
     Create ortogonal arrays from Latin Square in 4 successive steps:
     
     0) Take the column from the smaller array to create 2 new
@@ -642,9 +643,15 @@ def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
 
     ierror = 0
     icount = 0
+    # Simple lambda functions to create size of orthogonal array
     row_number = lambda icount, nlevels : nlevels**(icount+1)
     col_number = lambda row_number : row_number-1
 
+    ###################################
+    ### If 2 Level orthogonal array ###
+    ###################################
+
+    #Determining the number of rows
     if nlevels == 2:
         if nfact >= 2 and nfact <= 3:
                 icount = 1
@@ -671,13 +678,14 @@ def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
         iaux = Lx.copy()
         
         ### Define the 2-level Latin Square ###
-        index_list = [0, 1]
-        two_level = [-1, 1]
         LS = np.zeros((2,2))
         LS[0,0] = -1
         LS[0,1] =  1
         LS[1,0] =  1
         LS[1,1] = -1
+        # Other relevant lists for filling in the 2-level array
+        index_list = [0, 1]
+        two_level = [-1, 1]
         
         # In case of only one factor, copy the first Latin Square and leave the subroutine.
         if icount == 0:
@@ -690,7 +698,7 @@ def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
         irow = 2
         icol = 1
 
-        # Algorithm in Matlab starts from index 1
+        # Some weirdness is required here because the original algorithm in Matlab starts from index 1
         Lx = np.hstack((np.zeros((len(Lx), 1)), Lx))
         Lx = np.vstack((np.zeros((1, len(Lx[0,:]))), Lx))
         iaux = np.hstack((np.zeros((len(iaux), 1)), iaux))
@@ -722,6 +730,11 @@ def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
                         for i3 in range(1, icol + 1):
                                 iaux[i2,i3] = Lx[i2,i3]
 
+    ###################################
+    ### If 3 Level orthogonal array ###
+    ###################################
+
+    #Determining the number of rows
     elif nlevels == 3:
         if nfact >= 2 and nfact <= 4:
                 icount = 1
@@ -741,15 +754,14 @@ def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
         Lx = np.zeros((Lxrow,Lxcol))
         iaux = Lx.copy()
         
-        ### Define the two three-level Latin Squares. Latin Square 1 ###
+        # Relevant lists for filling in the 3-level array
         index_list = [0, 1, 2]
-        
-        LS1 = np.zeros((3,3))
         three_level = [-1, 0, 1]
+        ### Define the two three-level Latin Squares. Latin Square 1 ###
+        LS1 = np.zeros((3,3))
         for i in range(3):
                 for j in range(3):
                                 LS1[i,index_list[j]] = three_level[(j+i)%3];
-         
         ### ... and Latin Square 2. ###
         LS2 = np.zeros((3,3))
         three_level_2 = [-1, 1, 0]
@@ -771,13 +783,13 @@ def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
         irow = 3
         icol = 1
 
-        #Algorithm in Matlab starts from index 1
+        # Some weirdness is required here because the original algorithm in Matlab starts from index 1
         Lx = np.hstack((np.zeros((len(Lx), 1)), Lx))
         Lx = np.vstack((np.zeros((1, len(Lx[0,:]))), Lx))
         iaux = np.hstack((np.zeros((len(iaux), 1)), iaux))
         iaux = np.vstack((np.zeros((1, len(iaux[0,:]))), iaux))
         
-        ### Filling in Lx ###
+        ### Filling in orthogonal array ###
         for i1 in range(1, icount + 1):
                 for i2 in range(1, irow + 1):
                         for i3 in range(1, icol + 1):
@@ -814,12 +826,17 @@ def yates_array(no_of_levels : int, no_of_factors : int) -> np.array:
     """
     Function that creates a yates array according to yates algorithm
 
+    Sources: 
+    https://www.itl.nist.gov/div898/handbook/eda/section3/eda35i.htm 
+    https://en.wikipedia.org/wiki/Yates_analysis
+
     no_of_levels : The number of levels a factor can attain
 
     no_of_factors : The number of design variables in the problem
 
     """
 
+    # The values that can be entered into yates array, depends on the no_of_levels
     levels = []
     for i in range(no_of_levels+1):
         levels.append(i)
@@ -834,5 +851,6 @@ def yates_array(no_of_levels : int, no_of_factors : int) -> np.array:
         row_seg = row_seg // no_of_levels # Get row segment divided by number of levels
         for j in range(repetition_amount):
             for i in range(no_of_levels): 
-                yates_array[(i*row_seg + j*row_seg*no_of_levels):((i+1)*row_seg + j*row_seg*no_of_levels), col] = levels[i] # from position i to position i + no_of_levels
+                # The values are entered from position i to position i + no_of_levels
+                yates_array[(i*row_seg + j*row_seg*no_of_levels):((i+1)*row_seg + j*row_seg*no_of_levels), col] = levels[i] 
     return yates_array 

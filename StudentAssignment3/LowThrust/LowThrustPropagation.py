@@ -194,66 +194,88 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 bodies.create_empty_body('Vehicle')
 bodies.get_body('Vehicle').mass = vehicle_mass
 
-###########################################################################
-# CREATE PROPAGATOR SETTINGS ##############################################
-###########################################################################
+##############################################
+### RETRIEVING DEPENDENT VARIABLES TO SAVE ###
+##############################################
 
 # Retrieve dependent variables to save
 dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-# Check whether there is any
+# Check whether there are any
 are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
 
 ################################
-### Design Space Exploration ###
+### DESIGN SPACE EXPLORATION ###
 ################################
 
-# Create Low Thrust Problem object
+# List of minimum and maximum values for each design parameter (trajectory parameter)
 decision_variable_range = \
-    [[0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000], #Made list of lists instead of tuple, because the ffd requires a third level
+    [[0.0, 100.0, 0, -10000, -10000, -10000, -10000, -10000], 
      [6000.0, 800.0, 2.9999,10000,10000,10000,10000,10000]]
 
+# NOTE TO STUDENTS: HERE YOU INPUT WHAT DESIGN SPACE EXPLORATION METHOD YOU USE
 design_space_method = 'factorial_design'
 
 number_of_parameters = len(decision_variable_range[0])
 
+# The number of Monte Carlo simulations is defined, as well as the seed which
+# is passed to the MT19937 BitGenerator
 if design_space_method == 'monte_carlo':
     number_of_simulations = 100
-    random_seed = 42
-    np.random.seed(random_seed)
+    random_seed = 42 # ;)
+    np.random.seed(random_seed) # Slightly outdated way of doing this, but works
     print('\n Random Seed :', random_seed, '\n')
 
 elif design_space_method == 'fractional_factorial_design': 
+    # no_of_factors also includes any interactions that you may want to investigate
     no_of_factors = number_of_parameters 
+    # The orthogonal array creation function can only deal with 2 or 3 levels
     no_of_levels = 2
+    # Function that creates the orthogonal array
+    FFD_array, ierror = Util.orth_arrays(no_of_factors, no_of_levels)
+    number_of_simulations = len(FFD_array)
+    # If no_of_levels is 3, a third list is inserted into the decision_variable_range variable
     if no_of_levels == 3:
         mid_range_list = [(decision_variable_range[1][i] + decision_variable_range[0][i])/2 for i in range(number_of_parameters)]
         decision_variable_range.insert(1, mid_range_list)
-    FFD_array, ierror = Util.orth_arrays(no_of_factors, no_of_levels)
-    number_of_simulations = len(FFD_array)
 
 elif design_space_method == 'factorial_design':
-    no_of_levels = 2
+    # no_of_factors equals the number of parameters, all interactions are
+    # included somewhere in the factorial design
     no_of_factors = number_of_parameters
+    no_of_levels = 2
+    # Function that creates the yates_array
     yates_array = Util.yates_array(no_of_levels, no_of_factors)
+    number_of_simulations = len(yates_array)
+
+    # Evenly distributed set of values between—and including—the minimum and maximum value
+    # defined earlier 
     design_variable_arr = np.zeros((no_of_levels, no_of_factors))
     for par in range(no_of_factors):
         design_variable_arr[:, par] = np.linspace(decision_variable_range[0][par], decision_variable_range[1][par], no_of_levels, endpoint=True)
-        number_of_simulations = len(yates_array)
 
 parameters = np.zeros((number_of_simulations, number_of_parameters))
 
 for simulation_index in range(number_of_simulations):
     print(simulation_index)
 
+    # The factorial design runs through each row of Yates array and translates
+    # the value at each index to a corresponding parameter value in
+    # design_variable_arr
     if design_space_method == 'factorial_design':
         level_combination = yates_array[simulation_index, :]
-        for it, j in enumerate(level_combination): #Run through the row of levels from 0 to no_of_levels
+        # Enumerate simplifies the code because the entries in yates_array can
+        # directly be fed as indexes to the design parameters
+        for it, j in enumerate(level_combination):
             trajectory_parameters[it] = design_variable_arr[j, it]
     else:
+        # For Monte Carlo and FFD, a separate loop exists
         for parameter_index in range(number_of_parameters):
+            # If Monte Carlo, a random value is chosen with a uniform distribtion (NOTE: You can change the distribution) 
             if design_space_method == 'monte_carlo':
                 trajectory_parameters[parameter_index] = np.random.uniform(decision_variable_range[0][parameter_index], decision_variable_range[1][parameter_index])
+            # If FFD, an if else statement is used to determine, based on the
+            # value from the FFD_array, what design parameter value is used
             elif design_space_method == 'fractional_factorial_design':
                 if FFD_array[simulation_index,parameter_index] == -1:
                     trajectory_parameters[parameter_index] = decision_variable_range[0][parameter_index]
@@ -264,13 +286,14 @@ for simulation_index in range(number_of_simulations):
                 elif no_of_levels == 3 and FFD_array[simulation_index,parameter_index] == 1:
                     trajectory_parameters[parameter_index] = decision_variable_range[2][parameter_index]
                 else:
-                    print('Error something went wrong with assigning parameters')
+                    print('Something went wrong with assigning parameters')
 
     parameters[simulation_index, :] = trajectory_parameters.copy()
 
     # Create integrator settings
     integrator_settings = Util.get_integrator_settings(0, 0, 0, initial_propagation_time)
 
+    # Problem class is created
     current_low_thrust_problem = LowThrustProblem(bodies,
                                                      integrator_settings,
                                                      specific_impulse,
@@ -280,6 +303,7 @@ for simulation_index in range(number_of_simulations):
                                                       decision_variable_range,
                                                       True)
 
+    # NOTE: Propagator settings, termination settings, and initial_propagation_time are defined in the fitness function
     fitness = current_low_thrust_problem.fitness(trajectory_parameters)
 
     ### OUTPUT OF THE SIMULATION ###
