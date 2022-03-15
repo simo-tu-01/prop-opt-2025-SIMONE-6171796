@@ -203,6 +203,6 @@ class LowThrustProblem:
 
             self.dynamics_simulator_function = lambda : dynamics_simulator
 
-        # For the first two assignments, no computation of fitness is needed
+        # Add the objective and constraint values into the fitness vector
         fitness = hodographic_shaping.compute_delta_v( )
         return [fitness]

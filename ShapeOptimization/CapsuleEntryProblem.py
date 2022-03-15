@@ -184,6 +184,6 @@ class ShapeOptimizationProblem:
 
         self.dynamics_simulator_function = lambda: dynamics_simulator
 
-        # For the first two assignments, no computation of fitness is needed
+        # Add the objective and constraint values into the fitness vector
         fitness = 0.0
         return [fitness]
