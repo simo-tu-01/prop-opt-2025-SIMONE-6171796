@@ -138,7 +138,7 @@ thrust_parameters = [15629.13262285292,
                      0.5358478897251189,
                      -0.8607350478880107]
 # Choose whether output of the propagation is written to files
-write_results_to_file = False
+write_results_to_file = True
 # Get path of current directory
 current_dir = os.path.dirname(__file__)
 
@@ -204,31 +204,23 @@ decision_variable_range = \
      [20.0E3, 100.0, 0.1, 0.5 ,0.7, 1.0, 1.3]]
 
 # NOTE TO STUDENTS: HERE YOU INPUT WHAT DESIGN SPACE EXPLORATION METHOD YOU USE
-design_space_method = 'factorial_design'
+design_space_method = 'monte_carlo'
 
 number_of_parameters = len(decision_variable_range[0])
 
 # The number of Monte Carlo simulations is defined, as well as the seed which
 # is passed to the MT19937 BitGenerator
-if design_space_method == 'monte_carlo':
+if design_space_method == 'monte_carlo_one_at_a_time':
+    number_of_simulations_per_parameter = 50
+    number_of_simulations = number_of_parameters *  number_of_simulations_per_parameter
+    nominal_parameters = [ 10000.0, 80.0, 1, 0.05, 0.25, 0.35, 0.5, 0.65 ]
+    random_seed = 42 # ;)
+    np.random.seed(random_seed) # Slightly outdated way of doing this, but works
+elif design_space_method == 'monte_carlo':
     number_of_simulations = 100
     random_seed = 42 # ;)
     np.random.seed(random_seed) # Slightly outdated way of doing this, but works
     print('\n Random Seed :', random_seed, '\n')
-
-elif design_space_method == 'fractional_factorial_design': 
-    # no_of_factors also includes any interactions that you may want to investigate
-    no_of_factors = number_of_parameters
-    # The orthogonal array creation function can only deal with 2 or 3 levels
-    no_of_levels = 2
-    # Function that creates the orthogonal array
-    FFD_array, ierror = Util.orth_arrays(no_of_factors, no_of_levels)
-    number_of_simulations = len(FFD_array)
-    # If no_of_levels is 3, a third list is inserted into the decision_variable_range variable
-    if no_of_levels == 3:
-        mid_range_list = [(decision_variable_range[1][i] + decision_variable_range[0][i])/2 for i in range(number_of_parameters)]
-        decision_variable_range.insert(1, mid_range_list)
-
 elif design_space_method == 'factorial_design':
     # no_of_factors equals the number of parameters, all interactions are
     # included somewhere in the factorial design
@@ -244,7 +236,8 @@ elif design_space_method == 'factorial_design':
         design_variable_arr[:, par] = np.linspace(decision_variable_range[0][par], decision_variable_range[1][par], no_of_levels, endpoint=True)
         number_of_simulations = len(yates_array)
 
-parameters = np.zeros((number_of_simulations, number_of_parameters))
+parameters = dict()
+objectives_and_constraints = dict()
 
 for simulation_index in range(number_of_simulations):
     print(simulation_index)
@@ -258,27 +251,19 @@ for simulation_index in range(number_of_simulations):
         # directly be fed as indexes to the design parameters
         for it, j in enumerate(level_combination): #Run through the row of levels from 0 to no_of_levels
             thrust_parameters[it] = design_variable_arr[j, it]
-    else:
+    elif design_space_method == 'monte_carlo':
         # For Monte Carlo and FFD, a separate loop exists
         for parameter_index in range(number_of_parameters):
-            # If Monte Carlo, a random value is chosen with a uniform distribtion (NOTE: You can change the distribution) 
-            if design_space_method == 'monte_carlo':
-                thrust_parameters[parameter_index] = np.random.uniform(decision_variable_range[0][parameter_index], decision_variable_range[1][parameter_index])
-            # If FFD, an if else statement is used to determine, based on the
-            # value from the FFD_array, what design parameter value is used
-            elif design_space_method == 'fractional_factorial_design':
-                if FFD_array[simulation_index,parameter_index] == -1:
-                    thrust_parameters[parameter_index] = decision_variable_range[0][parameter_index]
-                elif no_of_levels == 2 and FFD_array[simulation_index,parameter_index] == 1:
-                    thrust_parameters[parameter_index] = decision_variable_range[1][parameter_index]
-                elif no_of_levels == 3 and FFD_array[simulation_index,parameter_index] == 0:
-                    thrust_parameters[parameter_index] = decision_variable_range[1][parameter_index]
-                elif no_of_levels == 3 and FFD_array[simulation_index,parameter_index] == 1:
-                    thrust_parameters[parameter_index] = decision_variable_range[2][parameter_index]
-                else:
-                    print('Error something went wrong with assigning parameters')
+            # If Monte Carlo, a random value is chosen with a uniform distribtion (NOTE: You can change the distribution)
+            thrust_parameters[parameter_index] = np.random.uniform(decision_variable_range[0][parameter_index], decision_variable_range[1][parameter_index])
+    elif design_space_method == 'monte_carlo_one_at_a_time':
+            # If Monte Carlo, a random value is chosen with a uniform distribtion (NOTE: You can change the distribution)
+            trajectory_parameters = nominal_parameters
+            current_parameter = int(simulation_index/number_of_simulations_per_parameter)
+            trajectory_parameters[current_parameter] = np.random.uniform(decision_variable_range[0][current_parameter], decision_variable_range[1][current_parameter])
 
-    parameters[simulation_index, :] = thrust_parameters.copy()
+
+    parameters[simulation_index] = thrust_parameters
 
     # Create integrator settings
     integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
@@ -295,6 +280,7 @@ for simulation_index in range(number_of_simulations):
 
     # NOTE: Propagator settings, termination settings, and initial_propagation_time are defined in the fitness function
     fitness = current_lunar_ascent_problem.fitness(thrust_parameters)
+    objectives_and_constraints[simulation_index] = fitness
 
     ### OUTPUT OF THE SIMULATION ###
     # Retrieve propagated state and dependent variables
@@ -314,3 +300,10 @@ for simulation_index in range(number_of_simulations):
     if write_results_to_file:
         save2txt(state_history, 'state_history.dat', output_path)
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
+
+if write_results_to_file:
+    subdirectory = '/DesignSpace_%s'%(design_space_method)
+    output_path = current_dir + subdirectory
+    save2txt(parameters, 'parameter_values.dat', output_path)
+    save2txt(objectives_and_constraints, 'objectives_constraints.dat', output_path)
+
