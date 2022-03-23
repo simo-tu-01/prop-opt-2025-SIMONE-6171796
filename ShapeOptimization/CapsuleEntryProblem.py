@@ -162,9 +162,10 @@ class ShapeOptimizationProblem:
         # Delete existing capsule
         bodies.remove_body('Capsule')
         # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
-        aerodynamic_analysis = Util.add_capsule_to_body_system(bodies,
+        Util.add_capsule_to_body_system(bodies,
                                    shape_parameters,
                                    self.capsule_density)
+
 
         # Create propagator settings for benchmark (Cowell)
         dependent_variables_to_save = Util.get_dependent_variable_save_settings()

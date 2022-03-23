@@ -23,6 +23,7 @@ This module defines useful functions that will be called by the main script, whe
 
 # General imports
 import numpy as np
+from itertools import combinations as comb
 
 # Tudatpy imports
 import tudatpy
@@ -1092,4 +1093,195 @@ def yates_array(no_of_levels : int, no_of_factors : int) -> np.array:
             for i in range(no_of_levels): 
                 # The values are entered from position i to position i + no_of_levels
                 yates_array[(i*row_seg + j*row_seg*no_of_levels):((i+1)*row_seg + j*row_seg*no_of_levels), col] = levels[i] 
-    return yates_array 
+    return yates_array
+
+
+def yates_array_v2(no_of_levels: int, no_of_factors: int) -> np.array:
+    """
+    Function that creates a yates array according to yates algorithm
+
+    no_of_levels : The number of levels a factor can attain
+
+    no_of_factors : The number of design variables in the problem
+
+    Return : np.array (no_of_levels**no_of_factors, no_of_factors)
+
+    """
+    if no_of_levels == 2:
+        levels = [-1, 1]
+    #    elif no_of_levels == 3:
+    #        levels = [-1, 0, 1]
+    #    elif no_of_levels == 4:
+    #        levels = [-2, -1, 1, 2]
+    #    elif no_of_levels == 5:
+    #        levels = [-2, -1, 0, 1, 2]
+    #    elif no_of_levels == 6:
+    #        levels = [-3, -2, -1, 1, 2, 3]
+    #    elif no_of_levels == 7:
+    #        levels = [-3, -2, -1, 0, 1, 2, 3]
+    #    elif no_of_levels == 8:
+    #        levels = [-4, -3, -2, -1, 1, 2, 3, 4]
+    # levels = []
+    # for i in range(no_of_levels+1):
+    #    levels.append(i)
+
+    n_rows = no_of_levels ** no_of_factors
+    n_cols = no_of_factors
+    yates_array = np.zeros((n_rows, n_cols), dtype='int')
+
+    row_seg = n_rows
+    for col in range(n_cols):
+        repetition_amount = no_of_levels ** col  # Number of times to repeat the row segment to fill the array
+        row_seg = row_seg // no_of_levels  # Get row segment divided by number of levels
+        for j in range(repetition_amount):
+            for it, level in enumerate(levels):
+                # fill in from position i to position i + no_of_levels
+                yates_array[(it * row_seg + j * row_seg * no_of_levels):((it + 1) * row_seg +
+                                                                         j * row_seg * no_of_levels), col] = levels[it]
+    return yates_array
+
+
+def anova_analysis(objective_values,
+                   factorial_design_array: np.array,
+                   no_of_factors=4,
+                   no_of_levels=2,
+                   level_of_interactions=2):
+    """
+    Function that performs an ANOVA for 2 levels and n factors. After some definitions, we iterate
+    through yates array, depending on the value being -1 or 1, we add the occurrence to a certain
+    container. Later the amount of items in the container determines the contribution of that
+    specific variable to an objective value. This iteration is done for individual, linear, and
+    quadratic effects, thereby determing the contribution of all interactions.
+
+    objective_values : list of objective function values following from the factorial design array
+
+    factorial_design_array : np.array from yates_array_v2 function
+
+    level_of_interactions : Integer either 2 or 3, depending on what interactions you want to
+    include
+
+    Return : This analysis returns the contributions of all parameters/interactions to the
+    specified objective. Specifically, it returns 4 elements: Pi, Pij, Pijk, and Pe. These are lists
+    that contain percentage contributions to the objective. Pi are the individual parameters, Pij
+    are linear interactions, and Pijk are the quadratic interactions. Pe are errors.
+
+    """
+
+    assert len(objective_values) == len(factorial_design_array)  # Quick check for validity of data
+
+    number_of_simulations = no_of_levels ** no_of_factors
+
+    #########################
+    ### Array definitions ###
+    #########################
+
+    # Lambda function to determine number of interaction columns
+    interactions = lambda iterable, k: [i for i in comb(range(iterable), k)]
+    no_of_interactions_2 = interactions(no_of_factors, 2)  # number of 2-level interactions
+    no_of_interactions_3 = interactions(no_of_factors, 3)  # number of 3-level interactions
+
+    # Arrays for individual, 2, and 3 level interactions - sum of squares
+    sum_of_squares_i = np.zeros(no_of_factors)
+    sum_of_squares_ij = np.zeros(len(no_of_interactions_2))
+    sum_of_squares_ijk = np.zeros(len(no_of_interactions_3))
+
+    # Arrays for individual, 2, and 3 level interactions - percentage contribution
+    percentage_contribution_i = np.zeros(no_of_factors)
+    percentage_contribution_ij = np.zeros(len(no_of_interactions_2))
+    percentage_contribution_ijk = np.zeros(len(no_of_interactions_3))
+
+    # Sum of objective values and mean of parameters
+    sum_of_objective = np.sum(objective_values)
+    mean_of_param = sum_of_objective / number_of_simulations
+
+    # Variance and standard deviation of data
+    variance_per_run = np.zeros(number_of_simulations)
+    objective_values_squared = np.zeros(number_of_simulations)
+    for i in range(len(factorial_design_array)):
+        variance_per_run[i] = (objective_values[i] - mean_of_param) ** 2 / (number_of_simulations - 1)
+        objective_values_squared[i] = objective_values[i] ** 2
+    variance = np.sum(variance_per_run)
+    standard_deviation = np.sqrt(variance)
+
+    # Square of sums
+    CF = sum_of_objective * mean_of_param
+    # Difference square of sums and sum of squares
+    sum_of_deviation = np.sum(objective_values_squared) - CF
+
+    #####################################
+    ### Iterations through yates array ###
+    #####################################
+
+    ### Linear effects ###
+    # Container for appearance of minimum/maximum value
+    Saux = np.zeros((no_of_factors, no_of_levels))
+    number_of_appearanes = number_of_simulations / no_of_levels
+    for j in range(number_of_simulations):
+        for i in range(no_of_factors):
+            if factorial_design_array[j, i] == -1:
+                Saux[i, 0] += objective_values[j]
+            else:
+                Saux[i, 1] += objective_values[j]
+
+    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
+        for i in range(no_of_factors):
+            sum_of_squares_i[i] = (1 / 2) * (Saux[i, 1] - Saux[i, 0]) ** 2 / number_of_appearanes
+            percentage_contribution_i[i] = 100 * sum_of_squares_i[i] / sum_of_deviation
+
+    ### 2-level interaction ###
+    # Container for appearance of minimum/maximum value
+    Saux = np.zeros((len(no_of_interactions_2), no_of_levels))
+    for j in range(number_of_simulations):
+        for i in range(len(no_of_interactions_2)):
+            # Interaction sequence of all possible 2-level interactions is created by multiplying the
+            # two respective elements from yates array
+            interaction = factorial_design_array[j, no_of_interactions_2[i][0]] * \
+                          factorial_design_array[j, no_of_interactions_2[i][1]]
+            if interaction == -1:
+                Saux[i, 0] += objective_values[j]
+            else:
+                Saux[i, 1] += objective_values[j]
+
+    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
+        for i in range(len(no_of_interactions_2)):
+            sum_of_squares_ij[i] = (1 / 2) * (Saux[i, 1] - Saux[i, 0]) ** 2 / number_of_appearanes
+            percentage_contribution_ij[i] = 100 * sum_of_squares_ij[i] / sum_of_deviation
+
+    ### 3-level interaction ###
+    # Container for appearance of minimum/maximum value
+    Saux = np.zeros((len(no_of_interactions_3), no_of_levels))
+    for j in range(number_of_simulations):
+        for i in range(len(no_of_interactions_3)):
+            # Interaction sequence of all possible 3-level interactions is created by multiplying the
+            # three respective elements from yates array
+            interaction = factorial_design_array[j, no_of_interactions_3[i][0]] * \
+                          factorial_design_array[j, no_of_interactions_3[i][1]] * \
+                          factorial_design_array[j, no_of_interactions_3[i][2]]
+            if interaction == -1:
+                Saux[i, 0] += objective_values[j]
+            else:
+                Saux[i, 1] += objective_values[j]
+
+    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
+        for i in range(len(no_of_interactions_3)):
+            sum_of_squares_ijk[i] = (1 / 2) * (Saux[i, 1] - Saux[i, 0]) ** 2 / number_of_appearanes
+            percentage_contribution_ijk[i] = 100 * sum_of_squares_ijk[i] / sum_of_deviation
+
+    ### Error contribution ###
+    sum_of_squares_error = sum_of_deviation - np.sum(sum_of_squares_i) - \
+                           np.sum(sum_of_squares_ij) - np.sum(sum_of_squares_ijk)
+
+    percentage_contribution_error = 0
+    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
+        percentage_contribution_error = 100 * sum_of_squares_error / sum_of_deviation
+
+    """
+    Because the function returns 4 separate variables, this is how data can be saved from this
+    function:
+
+    percentage_contribution_i, percentage_contribution_ij, percentage_contribution_ijk,
+    percentage_contribution_e = Util.anova_analysis(<objectives>, <yates_array>)
+    """
+
+    return percentage_contribution_i, percentage_contribution_ij, \
+           percentage_contribution_ijk, percentage_contribution_error
