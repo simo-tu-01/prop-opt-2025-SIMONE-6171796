@@ -197,10 +197,10 @@ def get_integrator_settings(propagator_index: int,
         Integrator settings to be provided to the dynamics simulator.
     """
     # Define list of multi-stage integrators
-    multi_stage_integrators = [propagation_setup.integrator.RKCoefficientSets.rkf_45,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_56,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_78,
-                               propagation_setup.integrator.RKCoefficientSets.rkdp_87]
+    multi_stage_integrators = [propagation_setup.integrator.CoefficientSets.rkf_45,
+                               propagation_setup.integrator.CoefficientSets.rkf_56,
+                               propagation_setup.integrator.CoefficientSets.rkf_78,
+                               propagation_setup.integrator.CoefficientSets.rkdp_87]
 
     # Use variable step-size integrator
     if integrator_index < 4:
@@ -255,10 +255,10 @@ def get_propagator_settings(shape_parameters,
         bodies_to_propagate,
         central_bodies)
 
-    # Set vehicle body orientation (constant angle of attack, zero sideslip and bank angle)
-    environment_setup.set_constant_aerodynamic_orientation(
-        bodies.get_body('Capsule'),shape_parameters[5], 0.0, 0.0,
-        silence_warnings=True )
+    new_angles = np.array([shape_parameters[5], 0.0, 0.0])
+    new_angle_function = lambda time : new_angles
+    bodies.get_body('Capsule').rotation_model.reset_aerodynamic_angle_function( new_angle_function )
+
 
     # Retrieve initial state
     initial_state = get_initial_state(simulation_start_epoch,bodies)
@@ -268,6 +268,8 @@ def get_propagator_settings(shape_parameters,
                                                                      acceleration_models,
                                                                      bodies_to_propagate,
                                                                      initial_state,
+                                                                     simulation_start_epoch,
+                                                                     None,
                                                                      termination_settings,
                                                                      current_propagator,
                                                                      output_variables=dependent_variables_to_save)
@@ -410,6 +412,12 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.envir
     """
     # Create new vehicle object and add it to the existing system of bodies
     bodies.create_empty_body('Capsule')
+    constant_angles = np.zeros([3,1])
+    constant_angles[ 0 ] = shape_parameters[ 5 ]
+    angle_function = lambda time : constant_angles
+    environment_setup.add_rotation_model( bodies, 'Capsule',
+                                          environment_setup.rotation_model.aerodynamic_angle_based(
+                                              'Earth', 'J2000', 'CapsuleFixed', angle_function ))
     # Update the capsule shape parameters
     set_capsule_shape_parameters(shape_parameters,
                                  bodies,
@@ -467,36 +475,26 @@ def generate_benchmarks(benchmark_step_size,
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
-    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
+    benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         first_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
-        first_benchmark_step_size,
-        first_benchmark_step_size,
-        np.inf,
-        np.inf)
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
+    benchmark_propagator_settings.print_settings.print_dependent_variable_indices = True
 
     print('Running first benchmark...')
-    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    first_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=True)
+        benchmark_propagator_settings )
 
     # Create integrator settings for the second benchmark in the same way
-    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
+    benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         second_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
-        second_benchmark_step_size,
-        second_benchmark_step_size,
-        np.inf,
-        np.inf)
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
+    benchmark_propagator_settings.print_settings.print_dependent_variable_indices = False
 
     print('Running second benchmark...')
-    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    second_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=False)
+        benchmark_propagator_settings )
 
 
     ### WRITE BENCHMARK RESULTS TO FILE ###

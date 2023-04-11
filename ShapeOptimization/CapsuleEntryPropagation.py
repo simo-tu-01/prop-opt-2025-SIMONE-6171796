@@ -103,6 +103,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+import sys
+sys.path.insert(0, '/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy')
+
 # General imports
 import os
 
@@ -325,9 +328,10 @@ for propagator_index in range(number_of_propagators):
                                                                        integrator_index,
                                                                        step_size_index,
                                                                        simulation_start_epoch)
+            current_propagator_settings.integrator_settings = current_integrator_settings
             # Create Shape Optimization Problem object
-            dynamics_simulator = numerical_simulation.SingleArcSimulator(
-                bodies, current_integrator_settings, current_propagator_settings, print_dependent_variable_data=False )
+            dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+                bodies, current_propagator_settings )
 
 
             ### OUTPUT OF THE SIMULATION ###

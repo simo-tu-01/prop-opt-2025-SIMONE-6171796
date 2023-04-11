@@ -108,7 +108,9 @@ def get_dependent_variable_save_settings() -> list:
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.relative_distance('Vehicle', 'Earth'),
                                    propagation_setup.dependent_variable.relative_distance('Vehicle', 'Sun'),
-                                   propagation_setup.dependent_variable.relative_distance('Vehicle', 'Mars')]
+                                   propagation_setup.dependent_variable.relative_distance('Vehicle', 'Mars'),
+                                   propagation_setup.dependent_variable.single_acceleration_norm(
+                                       propagation_setup.acceleration.thrust_acceleration_type,'Vehicle','Vehicle')]
     return dependent_variables_to_save
 
 
@@ -199,13 +201,11 @@ def get_propagator_settings( trajectory_parameters,
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Sun']
     # Retrieve thrust acceleration
-    thrust_settings = get_hodograph_thrust_acceleration_settings(trajectory_parameters,
-                                                                 bodies,
-                                                                 constant_specific_impulse)
+    thrust_settings = set_hodograph_thrust_model(trajectory_parameters, bodies, constant_specific_impulse)
     # Define accelerations acting on capsule
     acceleration_settings_on_vehicle = {
         'Sun': [propagation_setup.acceleration.point_mass_gravity()],
-        'Vehicle': [thrust_settings]
+        'Vehicle': [propagation_setup.acceleration.thrust_from_engine('LowThrustEngine')]
     }
     # Create global accelerations dictionary
     acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
@@ -318,7 +318,7 @@ def get_trajectory_final_time(trajectory_parameters: list,
     return initial_time + get_trajectory_time_of_flight(trajectory_parameters) - buffer_time
 
 
-def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping,
+def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
                                trajectory_parameters: list,
                                specific_impulse: float,
                                output_path: str = None):
@@ -516,9 +516,9 @@ def get_axial_velocity_shaping_functions(trajectory_parameters: list,
             free_coefficients)
 
 
-def create_hodographic_shaping_object(trajectory_parameters: list,
+def create_hodographic_trajectory(trajectory_parameters: list,
                                       bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
-        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
+        -> tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory:
     """
     It creates and returns the hodographic shaping object, based on the trajectory parameters.
 
@@ -566,25 +566,41 @@ def create_hodographic_shaping_object(trajectory_parameters: list,
     initial_state = bodies.get_body('Earth').state_in_base_frame_from_ephemeris(initial_time)
     final_state = bodies.get_body('Mars').state_in_base_frame_from_ephemeris(final_time)
     gravitational_parameter = bodies.get_body('Sun').gravitational_parameter
-    # Create and return shape-based method
-    hodographic_shaping_object = shape_based_thrust.HodographicShaping(initial_state,
-                                                                       final_state,
-                                                                       time_of_flight,
-                                                                       gravitational_parameter,
-                                                                       number_of_revolutions,
-                                                                       radial_velocity_shaping_functions,
-                                                                       normal_velocity_shaping_functions,
-                                                                       axial_velocity_shaping_functions,
-                                                                       radial_free_coefficients,
-                                                                       normal_free_coefficients,
-                                                                       axial_free_coefficients)
-    return hodographic_shaping_object
+
+    # Create settings for transfer trajectory (zero excess velocity on departure and arrival)
+    hodographic_leg_settings = transfer_trajectory.hodographic_shaping_leg(
+        radial_velocity_shaping_functions,
+        normal_velocity_shaping_functions,
+        axial_velocity_shaping_functions )
+    node_settings = list()
+    node_settings.append( transfer_trajectory.departure_node( 1.0E8, 0.0 ) )
+    node_settings.append( transfer_trajectory.capture_node( 1.0E8, 0.0 ) )
+
+    # Create and return transfer trajectory
+    trajectory_object = transfer_trajectory.create_transfer_trajectory(
+        bodies, [hodographic_leg_settings], node_settings, ['Earth','Mars'],'Sun' )
 
 
-def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
-                                               bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                               specific_impulse: float) \
-        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
+    node_times = list( )
+    node_times.append( get_trajectory_initial_time( trajectory_parameters ) )
+    node_times.append( get_trajectory_final_time( trajectory_parameters ) )
+
+    transfer_trajectory.print_parameter_definitions( [hodographic_leg_settings], node_settings )
+    hodograph_free_parameters = trajectory_parameters[2:9]
+    print( hodograph_free_parameters )
+    node_parameters = list()
+    node_parameters.append( np.zeros([3,1]))
+    node_parameters.append( np.zeros([3,1]))
+
+
+    trajectory_object.evaluate( node_times, [hodograph_free_parameters], node_parameters )
+    print('DV',trajectory_object.delta_v)
+    return trajectory_object
+
+
+def set_hodograph_thrust_model(trajectory_parameters: list,
+                               bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                               specific_impulse: float):
     """
     It extracts the acceleration settings resulting from the hodographic trajectory and returns the equivalent thrust
     acceleration settings object.
@@ -604,20 +620,19 @@ def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
         Thrust acceleration settings object.
     """
     # Create shaping object
-    shaping_object = create_hodographic_shaping_object(trajectory_parameters,
-                                                       bodies)
-    # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
-    # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
-    # trajectory and the beginning of the simulation
-    time_offset = get_trajectory_initial_time(trajectory_parameters)
-    # Create specific impulse lambda function
-    specific_impulse_function = lambda t: specific_impulse
-    # Return acceleration settings
-    return transfer_trajectory.get_low_thrust_acceleration_settings(shaping_object,
-                                                                    bodies,
-                                                                    'Vehicle',
-                                                                    specific_impulse_function,
-                                                                    time_offset)
+    trajectory_object = create_hodographic_trajectory(trajectory_parameters, bodies)
+
+
+    transfer_trajectory.set_low_thrust_acceleration( trajectory_object.legs[ 0 ], bodies, 'Vehicle', 'LowThrustEngine' )
+    # # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
+    # # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
+    # # trajectory and the beginning of the simulation
+    # time_offset = get_trajectory_initial_time(trajectory_parameters)
+    # # Create specific impulse lambda function
+    # specific_impulse_function = lambda t: specific_impulse
+
+
+
 
 
 def get_hodograph_state_at_epoch(trajectory_parameters: list,
@@ -639,11 +654,12 @@ def get_hodograph_state_at_epoch(trajectory_parameters: list,
         Cartesian state in the inertial frame of the spacecraft at the given epoch.
     """
     # Create shaping object
-    shaping_object = create_hodographic_shaping_object(trajectory_parameters,
+    transfer_trajectory = create_hodographic_trajectory(trajectory_parameters,
                                                        bodies)
+    hodographic_leg = transfer_trajectory.legs[ 0 ]
     # Define current hodograph time
-    hodograph_time = epoch - get_trajectory_initial_time(trajectory_parameters)
-    return shaping_object.get_state(hodograph_time)
+    # hodograph_time = epoch - get_trajectory_initial_time(trajectory_parameters)
+    return hodographic_leg.state_along_trajectory( epoch )
 
 ###########################################################################
 # BENCHMARK UTILITIES #####################################################
@@ -705,7 +721,7 @@ def generate_benchmarks(benchmark_step_size: float,
     benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         first_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
+        propagation_setup.integrator.CoefficientSets.rkdp_87,
         first_benchmark_step_size,
         first_benchmark_step_size,
         np.inf,
@@ -721,7 +737,7 @@ def generate_benchmarks(benchmark_step_size: float,
     benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
         simulation_start_epoch,
         second_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
+        propagation_setup.integrator.CoefficientSets.rkdp_87,
         second_benchmark_step_size,
         second_benchmark_step_size,
         np.inf,
