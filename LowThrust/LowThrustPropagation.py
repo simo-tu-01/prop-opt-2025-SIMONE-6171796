@@ -159,96 +159,96 @@ parameter_vector =[[303.3622685185, 385.03125, 0, -999.466, -6807.06, -3851.67, 
 # ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER.
 for iteration in range(14):
 
-    trajectory_parameters = parameter_vector[iteration]
+trajectory_parameters = parameter_vector[iteration]
 
-    # Choose whether benchmark is run
-    use_benchmark = True
-    # Choose whether output of the propagation is written to files
-    write_results_to_file = True
-    # Get path of current directory
-    current_dir = os.path.dirname(__file__)
+# Choose whether benchmark is run
+use_benchmark = True
+# Choose whether output of the propagation is written to files
+write_results_to_file = True
+# Get path of current directory
+current_dir = os.path.dirname(__file__)
 
-    ###########################################################################
-    # DEFINE SIMULATION SETTINGS ##############################################
-    ###########################################################################
+###########################################################################
+# DEFINE SIMULATION SETTINGS ##############################################
+###########################################################################
 
-    # Vehicle settings
-    vehicle_mass = 4.0E3
-    specific_impulse = 3000.0
-    # Fixed parameters
-    minimum_mars_distance = 5.0E7
-    # Time since 'departure from Earth CoM' at which propagation starts (and similar
-    # for arrival time)
-    time_buffer = 30.0 * constants.JULIAN_DAY
-    # Time at which to start propagation
-    initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
-                                                                time_buffer)
-    ###########################################################################
-    # CREATE ENVIRONMENT ######################################################
-    ###########################################################################
+# Vehicle settings
+vehicle_mass = 4.0E3
+specific_impulse = 3000.0
+# Fixed parameters
+minimum_mars_distance = 5.0E7
+# Time since 'departure from Earth CoM' at which propagation starts (and similar
+# for arrival time)
+time_buffer = 30.0 * constants.JULIAN_DAY
+# Time at which to start propagation
+initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
+                                                            time_buffer)
+###########################################################################
+# CREATE ENVIRONMENT ######################################################
+###########################################################################
 
-    # Define settings for celestial bodies
-    bodies_to_create = ['Earth',
-                        'Mars',
-                        'Sun']
-    # Define coordinate system
-    global_frame_origin = 'SSB'
-    global_frame_orientation = 'ECLIPJ2000'
-    # Create body settings
-    body_settings = environment_setup.get_default_body_settings(bodies_to_create,
-                                                                global_frame_origin,
-                                                                global_frame_orientation)
-    # Create bodies
-    bodies = environment_setup.create_system_of_bodies(body_settings)
+# Define settings for celestial bodies
+bodies_to_create = ['Earth',
+                    'Mars',
+                    'Sun']
+# Define coordinate system
+global_frame_origin = 'SSB'
+global_frame_orientation = 'ECLIPJ2000'
+# Create body settings
+body_settings = environment_setup.get_default_body_settings(bodies_to_create,
+                                                            global_frame_origin,
+                                                            global_frame_orientation)
+# Create bodies
+bodies = environment_setup.create_system_of_bodies(body_settings)
 
-    # Create vehicle object and add it to the existing system of bodies
-    bodies.create_empty_body('Vehicle')
-    bodies.get_body('Vehicle').mass = vehicle_mass
-    thrust_magnitude_settings = (
-        propagation_setup.thrust.custom_thrust_magnitude_fixed_isp( lambda time : 0.0, specific_impulse ) )
-    environment_setup.add_engine_model(
-        'Vehicle', 'LowThrustEngine', thrust_magnitude_settings, bodies )
-    environment_setup.add_rotation_model(
-        bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
-            lambda time : np.array([1,0,0] ), global_frame_orientation, 'VehcleFixed' ) )
+# Create vehicle object and add it to the existing system of bodies
+bodies.create_empty_body('Vehicle')
+bodies.get_body('Vehicle').mass = vehicle_mass
+thrust_magnitude_settings = (
+    propagation_setup.thrust.custom_thrust_magnitude_fixed_isp( lambda time : 0.0, specific_impulse ) )
+environment_setup.add_engine_model(
+    'Vehicle', 'LowThrustEngine', thrust_magnitude_settings, bodies )
+environment_setup.add_rotation_model(
+    bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
+        lambda time : np.array([1,0,0] ), global_frame_orientation, 'VehcleFixed' ) )
 
-    ###########################################################################
-    # CREATE PROPAGATOR SETTINGS ##############################################
-    ###########################################################################
+###########################################################################
+# CREATE PROPAGATOR SETTINGS ##############################################
+###########################################################################
 
 
-    # Retrieve termination settings
-    termination_settings = Util.get_termination_settings(trajectory_parameters,
-                                                         minimum_mars_distance,
-                                                         time_buffer)
-    # Retrieve dependent variables to save
-    dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-    # Check whether there is any
-    are_dependent_variables_to_save = False if not dependent_variables_to_save else True
+# Retrieve termination settings
+termination_settings = Util.get_termination_settings(trajectory_parameters,
+                                                     minimum_mars_distance,
+                                                     time_buffer)
+# Retrieve dependent variables to save
+dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+# Check whether there is any
+are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
-    current_propagator_settings = Util.get_propagator_settings(
-        trajectory_parameters,
-        bodies,
-        initial_propagation_time,
-        specific_impulse,
-        vehicle_mass,
-        termination_settings,
-        dependent_variables_to_save)
-    current_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
-        86400.0,
-        propagation_setup.integrator.CoefficientSets.rkdp_87)
+current_propagator_settings = Util.get_propagator_settings(
+    trajectory_parameters,
+    bodies,
+    initial_propagation_time,
+    specific_impulse,
+    vehicle_mass,
+    termination_settings,
+    dependent_variables_to_save)
+current_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+    86400.0,
+    propagation_setup.integrator.CoefficientSets.rkdp_87)
 
-    dynamics_simulator = numerical_simulation.create_dynamics_simulator(
-        bodies, current_propagator_settings)
+dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+    bodies, current_propagator_settings)
 
-    ### OUTPUT OF THE SIMULATION ###
-    # Retrieve propagated state and dependent variables
-    state_history = dynamics_simulator.state_history
-    unprocessed_state_history = dynamics_simulator.unprocessed_state_history
-    dependent_variable_history = dynamics_simulator.dependent_variable_history
+### OUTPUT OF THE SIMULATION ###
+# Retrieve propagated state and dependent variables
+state_history = dynamics_simulator.state_history
+unprocessed_state_history = dynamics_simulator.unprocessed_state_history
+dependent_variable_history = dynamics_simulator.dependent_variable_history
 
-    output_path = current_dir + '/SimulationOutput/MonteCarlo/'
-    save2txt(dependent_variable_history, 'dependent_variable_history' + str(iteration) + '.dat', output_path)
+output_path = current_dir + '/SimulationOutput/MonteCarlo/'
+save2txt(dependent_variable_history, 'dependent_variable_history' + str(iteration) + '.dat', output_path)
 # ###########################################################################
 # # IF DESIRED, GENERATE AND COMPARE BENCHMARKS #############################
 # ###########################################################################

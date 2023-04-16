@@ -144,90 +144,90 @@ parameter_vector = [[7.067287765, 2.4170219984, 2.2363750229, -0.5273354261, 0.4
 [5.2048962004, 2.130641664, 0.9266435643, -0.803848226, 0.2672311423, 0.4606871979]
 ]
 for iteration in range(len(parameter_vector)):
-    print
-    # NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
-    # ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER
-    shape_parameters = parameter_vector[ iteration ]
-    # Choose whether benchmark is run
-    use_benchmark = True
-    # Choose whether output of the propagation is written to files
-    write_results_to_file = True
-    # Get path of current directory
-    current_dir = os.path.dirname(__file__)
 
-    ###########################################################################
-    # DEFINE SIMULATION SETTINGS ##############################################
-    ###########################################################################
+# NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
+# ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER
+shape_parameters = parameter_vector[ iteration ]
+# Choose whether benchmark is run
+use_benchmark = True
+# Choose whether output of the propagation is written to files
+write_results_to_file = True
+# Get path of current directory
+current_dir = os.path.dirname(__file__)
 
-    # Set simulation start epoch
-    simulation_start_epoch = 0.0  # s
-    # Set termination conditions
-    maximum_duration = constants.JULIAN_DAY  # s
-    termination_altitude = 25.0E3  # m
-    # Set vehicle properties
-    capsule_density = 250.0  # kg m-3
+###########################################################################
+# DEFINE SIMULATION SETTINGS ##############################################
+###########################################################################
 
-    ###########################################################################
-    # CREATE ENVIRONMENT ######################################################
-    ###########################################################################
+# Set simulation start epoch
+simulation_start_epoch = 0.0  # s
+# Set termination conditions
+maximum_duration = constants.JULIAN_DAY  # s
+termination_altitude = 25.0E3  # m
+# Set vehicle properties
+capsule_density = 250.0  # kg m-3
 
-    # Define settings for celestial bodies
-    bodies_to_create = ['Earth']
-    # Define coordinate system
-    global_frame_origin = 'Earth'
-    global_frame_orientation = 'J2000'
+###########################################################################
+# CREATE ENVIRONMENT ######################################################
+###########################################################################
 
-    # Create body settings
-    body_settings = environment_setup.get_default_body_settings(
-        bodies_to_create,
-        global_frame_origin,
-        global_frame_orientation)
-    # Create bodies
-    bodies = environment_setup.create_system_of_bodies(body_settings)
+# Define settings for celestial bodies
+bodies_to_create = ['Earth']
+# Define coordinate system
+global_frame_origin = 'Earth'
+global_frame_orientation = 'J2000'
 
-    # Create and add capsule to body system
-    # NOTE TO STUDENTS: When making any modifications to the capsule vehicle, do NOT make them in this code, but in the
-    # add_capsule_to_body_system function
-    Util.add_capsule_to_body_system(bodies,
-                                    shape_parameters,
-                                    capsule_density)
+# Create body settings
+body_settings = environment_setup.get_default_body_settings(
+    bodies_to_create,
+    global_frame_origin,
+    global_frame_orientation)
+# Create bodies
+bodies = environment_setup.create_system_of_bodies(body_settings)
 
-
-    ###########################################################################
-    # CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
-    ###########################################################################
-
-    # Retrieve termination settings
-    termination_settings = Util.get_termination_settings(simulation_start_epoch,
-                                                         maximum_duration,
-                                                         termination_altitude)
-    # Retrieve dependent variables to save
-    dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-    # Check whether there is any
-    are_dependent_variables_to_save = False if not dependent_variables_to_save else True
+# Create and add capsule to body system
+# NOTE TO STUDENTS: When making any modifications to the capsule vehicle, do NOT make them in this code, but in the
+# add_capsule_to_body_system function
+Util.add_capsule_to_body_system(bodies,
+                                shape_parameters,
+                                capsule_density)
 
 
-    # Propagate dynamics
-    current_propagator_settings = Util.get_propagator_settings(shape_parameters,
-                                                                     bodies,
-                                                                     simulation_start_epoch,
-                                                                     termination_settings,
-                                                                     dependent_variables_to_save )
-    current_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
-        4.0,
-        propagation_setup.integrator.CoefficientSets.rkdp_87)
+###########################################################################
+# CREATE (CONSTANT) PROPAGATION SETTINGS ##################################
+###########################################################################
 
-    dynamics_simulator = numerical_simulation.create_dynamics_simulator(
-        bodies, current_propagator_settings)
+# Retrieve termination settings
+termination_settings = Util.get_termination_settings(simulation_start_epoch,
+                                                     maximum_duration,
+                                                     termination_altitude)
+# Retrieve dependent variables to save
+dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+# Check whether there is any
+are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
-    ### OUTPUT OF THE SIMULATION ###
-    # Retrieve propagated state and dependent variables
-    state_history = dynamics_simulator.state_history
-    unprocessed_state_history = dynamics_simulator.unprocessed_state_history
-    dependent_variable_history = dynamics_simulator.dependent_variable_history
 
-    output_path = current_dir + '/SimulationOutput/MonteCarlo/'
-    save2txt(dependent_variable_history, 'dependent_variable_history'+str(iteration)+'.dat', output_path)
+# Propagate dynamics
+current_propagator_settings = Util.get_propagator_settings(shape_parameters,
+                                                                 bodies,
+                                                                 simulation_start_epoch,
+                                                                 termination_settings,
+                                                                 dependent_variables_to_save )
+current_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+    4.0,
+    propagation_setup.integrator.CoefficientSets.rkdp_87)
+
+dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+    bodies, current_propagator_settings)
+
+### OUTPUT OF THE SIMULATION ###
+# Retrieve propagated state and dependent variables
+state_history = dynamics_simulator.state_history
+unprocessed_state_history = dynamics_simulator.unprocessed_state_history
+dependent_variable_history = dynamics_simulator.dependent_variable_history
+
+output_path = current_dir + '/SimulationOutput/MonteCarlo/'
+save2txt(dependent_variable_history, 'dependent_variable_history'+str(iteration)+'.dat', output_path)
 
 #
 # ###########################################################################
