@@ -140,97 +140,93 @@ import LowThrustUtilities as Util
 
 # Load spice kernels
 spice_interface.load_standard_kernels()
+parameter_vector =[[303.3622685185, 385.03125, 0, -999.466, -6807.06, -3851.67, 1519.75, 7624.45, 9524.28],
+[413.0474537037, 315.8425925926, 0, -4898.13, 3852.17, -4754.69, 1852.23, 990.67, 1737.89],
+[8199.4560185185, 354.7326388889, 0, 5676.33, -7329.29, -2345.44, 8711.12, -5988.68, -4257.05],
+[7454.4212962963, 320.5648148148, 0, 8661.95, 8425.79, -8632.97, 5666.72, -3567.68, -2806.92],
+[6596.3425925926, 437.28125, 0, 1661.51, 1214.98, -5583.44, 5608.25, 8846.71, 6974.26],
+[6557.9398148148, 438.068287037, 0, 1017.75, -3848.92, -1587.56, -589.296, 2461.11, 7737.28],
+[1076.2951388889, 501.40625, 1, 5681.65, 4113.11, -9222.22, -2795.61, 483.14, 7345.91],
+[1933.4259259259, 569.8865740741, 1, 2159.43, 3666.56, -8289.99, 2095.89, -3822.54, -5767.08],
+[270.1944444444, 659.6053240741, 1, -4630.2, -8210.04, -3817.67, -563.669, -4826.04, 3880.13],
+[4887.662037037, 685.0659722222, 1, -894.722, 1598.62, -6831.55, -6231.31, -704.113, 2045.21],
+[1915.1851851852, 595.3113425926, 1, 3292.83, 5258.7, -9230.84, 1928.56, -9672.92, -6155.89],
+[2616.6782407408, 780.09375, 1, -6534.69, 1320.06, -4655.8, -2902.23, -5091.87, -9810.39],
+[2616.6782407408, 780.09375, 1, -6534.69, 1320.06, -4655.8, -2902.23, -5091.87, -9810.39],
+[1851.7969483895, 747.75262, 1, 3191.61, 8890.99, -9177.82, 3029.62, -2291.02, 9050.31]]
+
 # NOTE TO STUDENTS: INPUT YOUR PARAMETER SET HERE, FROM THE INPUT FILES
 # ON BRIGHTSPACE, FOR YOUR SPECIFIC STUDENT NUMBER.
-trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
-                         37073942.58665284 / constants.JULIAN_DAY,
-                         0,
-                         2471.19649906354,
-                         4207.587982407276,
-                         -5594.040587888714,
-                         8748.139268525232,
-                         -3449.838496679572,
-                         0.0]
+for iteration in range(14):
 
-# Choose whether benchmark is run
-use_benchmark = True
-# Choose whether output of the propagation is written to files
-write_results_to_file = True
-# Get path of current directory
-current_dir = os.path.dirname(__file__)
+    trajectory_parameters = parameter_vector[iteration]
 
-###########################################################################
-# DEFINE SIMULATION SETTINGS ##############################################
-###########################################################################
+    # Choose whether benchmark is run
+    use_benchmark = True
+    # Choose whether output of the propagation is written to files
+    write_results_to_file = True
+    # Get path of current directory
+    current_dir = os.path.dirname(__file__)
 
-# Vehicle settings
-vehicle_mass = 4.0E3
-specific_impulse = 3000.0
-# Fixed parameters
-minimum_mars_distance = 5.0E7
-# Time since 'departure from Earth CoM' at which propagation starts (and similar
-# for arrival time)
-time_buffer = 30.0 * constants.JULIAN_DAY
-# Time at which to start propagation
-initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
-                                                            time_buffer)
-###########################################################################
-# CREATE ENVIRONMENT ######################################################
-###########################################################################
+    ###########################################################################
+    # DEFINE SIMULATION SETTINGS ##############################################
+    ###########################################################################
 
-# Define settings for celestial bodies
-bodies_to_create = ['Earth',
-                    'Mars',
-                    'Sun']
-# Define coordinate system
-global_frame_origin = 'SSB'
-global_frame_orientation = 'ECLIPJ2000'
-# Create body settings
-body_settings = environment_setup.get_default_body_settings(bodies_to_create,
-                                                            global_frame_origin,
-                                                            global_frame_orientation)
-# Create bodies
-bodies = environment_setup.create_system_of_bodies(body_settings)
+    # Vehicle settings
+    vehicle_mass = 4.0E3
+    specific_impulse = 3000.0
+    # Fixed parameters
+    minimum_mars_distance = 5.0E7
+    # Time since 'departure from Earth CoM' at which propagation starts (and similar
+    # for arrival time)
+    time_buffer = 30.0 * constants.JULIAN_DAY
+    # Time at which to start propagation
+    initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
+                                                                time_buffer)
+    ###########################################################################
+    # CREATE ENVIRONMENT ######################################################
+    ###########################################################################
 
-# Create vehicle object and add it to the existing system of bodies
-bodies.create_empty_body('Vehicle')
-bodies.get_body('Vehicle').mass = vehicle_mass
-thrust_magnitude_settings = (
-    propagation_setup.thrust.custom_thrust_magnitude_fixed_isp( lambda time : 0.0, specific_impulse ) )
-environment_setup.add_engine_model(
-    'Vehicle', 'LowThrustEngine', thrust_magnitude_settings, bodies )
-environment_setup.add_rotation_model(
-    bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
-        lambda time : np.array([1,0,0] ), global_frame_orientation, 'VehcleFixed' ) )
+    # Define settings for celestial bodies
+    bodies_to_create = ['Earth',
+                        'Mars',
+                        'Sun']
+    # Define coordinate system
+    global_frame_origin = 'SSB'
+    global_frame_orientation = 'ECLIPJ2000'
+    # Create body settings
+    body_settings = environment_setup.get_default_body_settings(bodies_to_create,
+                                                                global_frame_origin,
+                                                                global_frame_orientation)
+    # Create bodies
+    bodies = environment_setup.create_system_of_bodies(body_settings)
 
-###########################################################################
-# CREATE PROPAGATOR SETTINGS ##############################################
-###########################################################################
+    # Create vehicle object and add it to the existing system of bodies
+    bodies.create_empty_body('Vehicle')
+    bodies.get_body('Vehicle').mass = vehicle_mass
+    thrust_magnitude_settings = (
+        propagation_setup.thrust.custom_thrust_magnitude_fixed_isp( lambda time : 0.0, specific_impulse ) )
+    environment_setup.add_engine_model(
+        'Vehicle', 'LowThrustEngine', thrust_magnitude_settings, bodies )
+    environment_setup.add_rotation_model(
+        bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
+            lambda time : np.array([1,0,0] ), global_frame_orientation, 'VehcleFixed' ) )
+
+    ###########################################################################
+    # CREATE PROPAGATOR SETTINGS ##############################################
+    ###########################################################################
 
 
-# Retrieve termination settings
-termination_settings = Util.get_termination_settings(trajectory_parameters,
-                                                     minimum_mars_distance,
-                                                     time_buffer)
-# Retrieve dependent variables to save
-dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-# Check whether there is any
-are_dependent_variables_to_save = False if not dependent_variables_to_save else True
+    # Retrieve termination settings
+    termination_settings = Util.get_termination_settings(trajectory_parameters,
+                                                         minimum_mars_distance,
+                                                         time_buffer)
+    # Retrieve dependent variables to save
+    dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+    # Check whether there is any
+    are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
-
-###########################################################################
-# IF DESIRED, GENERATE AND COMPARE BENCHMARKS #############################
-###########################################################################
-
-# NOTE TO STUDENTS: MODIFY THE CODE INSIDE THIS "IF STATEMENT" (AND CALLED FUNCTIONS, IF NEEDED)
-# TO ASSESS THE QUALITY OF VARIOUS BENCHMARK SETTINGS
-if use_benchmark:
-    # Define benchmark interpolator settings to make a comparison between the two benchmarks
-    benchmark_interpolator_settings = interpolators.lagrange_interpolation(
-        8,boundary_interpolation = interpolators.extrapolate_at_boundary)
-
-    # Create propagator settings for benchmark (Cowell)
-    propagator_settings = Util.get_propagator_settings(
+    current_propagator_settings = Util.get_propagator_settings(
         trajectory_parameters,
         bodies,
         initial_propagation_time,
@@ -238,44 +234,79 @@ if use_benchmark:
         vehicle_mass,
         termination_settings,
         dependent_variables_to_save)
+    current_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+        86400.0,
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
 
-    benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/' if write_results_to_file else None
+    dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+        bodies, current_propagator_settings)
 
-    # Generate benchmarks
-    benchmark_step_size = 86400.0
-    benchmark_list = Util.generate_benchmarks(benchmark_step_size,
-                                              initial_propagation_time,
-                                              bodies,
-                                              propagator_settings,
-                                              are_dependent_variables_to_save,
-                                              benchmark_output_path)
-    # Extract benchmark states
-    first_benchmark_state_history = benchmark_list[0]
-    second_benchmark_state_history = benchmark_list[1]
-    # Create state interpolator for first benchmark
-    benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark_state_history,
-                                                                                            benchmark_interpolator_settings)
+    ### OUTPUT OF THE SIMULATION ###
+    # Retrieve propagated state and dependent variables
+    state_history = dynamics_simulator.state_history
+    unprocessed_state_history = dynamics_simulator.unprocessed_state_history
+    dependent_variable_history = dynamics_simulator.dependent_variable_history
 
-    # Compare benchmark states, returning interpolator of the first benchmark
-    benchmark_state_difference = Util.compare_benchmarks(first_benchmark_state_history,
-                                                         second_benchmark_state_history,
-                                                         benchmark_output_path,
-                                                         'benchmarks_state_difference.dat')
-
-    # Extract benchmark dependent variables, if present
-    if are_dependent_variables_to_save:
-        first_benchmark_dependent_variable_history = benchmark_list[2]
-        second_benchmark_dependent_variable_history = benchmark_list[3]
-        # Create dependent variable interpolator for first benchmark
-        benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_vector_interpolator(
-            first_benchmark_dependent_variable_history,
-            benchmark_interpolator_settings)
-
-        # Compare benchmark dependent variables, returning interpolator of the first benchmark, if present
-        benchmark_dependent_difference = Util.compare_benchmarks(first_benchmark_dependent_variable_history,
-                                                                 second_benchmark_dependent_variable_history,
-                                                                 benchmark_output_path,
-                                                                 'benchmarks_dependent_variable_difference.dat')
+    output_path = current_dir + '/SimulationOutput/MonteCarlo/'
+    save2txt(dependent_variable_history, 'dependent_variable_history' + str(iteration) + '.dat', output_path)
+# ###########################################################################
+# # IF DESIRED, GENERATE AND COMPARE BENCHMARKS #############################
+# ###########################################################################
+#
+# # NOTE TO STUDENTS: MODIFY THE CODE INSIDE THIS "IF STATEMENT" (AND CALLED FUNCTIONS, IF NEEDED)
+# # TO ASSESS THE QUALITY OF VARIOUS BENCHMARK SETTINGS
+# if use_benchmark:
+#     # Define benchmark interpolator settings to make a comparison between the two benchmarks
+#     benchmark_interpolator_settings = interpolators.lagrange_interpolation(
+#         8,boundary_interpolation = interpolators.extrapolate_at_boundary)
+#
+#     # Create propagator settings for benchmark (Cowell)
+#     propagator_settings = Util.get_propagator_settings(
+#         trajectory_parameters,
+#         bodies,
+#         initial_propagation_time,
+#         specific_impulse,
+#         vehicle_mass,
+#         termination_settings,
+#         dependent_variables_to_save)
+#
+#     benchmark_output_path = current_dir + '/SimulationOutput/benchmarks/' if write_results_to_file else None
+#
+#     # Generate benchmarks
+#     benchmark_step_size = 86400.0
+#     benchmark_list = Util.generate_benchmarks(benchmark_step_size,
+#                                               initial_propagation_time,
+#                                               bodies,
+#                                               propagator_settings,
+#                                               are_dependent_variables_to_save,
+#                                               benchmark_output_path)
+#     # Extract benchmark states
+#     first_benchmark_state_history = benchmark_list[0]
+#     second_benchmark_state_history = benchmark_list[1]
+#     # Create state interpolator for first benchmark
+#     benchmark_state_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark_state_history,
+#                                                                                             benchmark_interpolator_settings)
+#
+#     # Compare benchmark states, returning interpolator of the first benchmark
+#     benchmark_state_difference = Util.compare_benchmarks(first_benchmark_state_history,
+#                                                          second_benchmark_state_history,
+#                                                          benchmark_output_path,
+#                                                          'benchmarks_state_difference.dat')
+#
+#     # Extract benchmark dependent variables, if present
+#     if are_dependent_variables_to_save:
+#         first_benchmark_dependent_variable_history = benchmark_list[2]
+#         second_benchmark_dependent_variable_history = benchmark_list[3]
+#         # Create dependent variable interpolator for first benchmark
+#         benchmark_dependent_variable_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+#             first_benchmark_dependent_variable_history,
+#             benchmark_interpolator_settings)
+#
+#         # Compare benchmark dependent variables, returning interpolator of the first benchmark, if present
+#         benchmark_dependent_difference = Util.compare_benchmarks(first_benchmark_dependent_variable_history,
+#                                                                  second_benchmark_dependent_variable_history,
+#                                                                  benchmark_output_path,
+#                                                                  'benchmarks_dependent_variable_difference.dat')
 #
 # ###########################################################################
 # # WRITE RESULTS FOR SEMI-ANALYTICAL METHOD ################################

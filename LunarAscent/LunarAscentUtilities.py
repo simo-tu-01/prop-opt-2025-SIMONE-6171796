@@ -169,7 +169,11 @@ def get_dependent_variable_save_settings() -> list:
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.altitude('Vehicle', 'Moon'),
                                    propagation_setup.dependent_variable.relative_speed('Vehicle', 'Moon'),
-                                   propagation_setup.dependent_variable.flight_path_angle('Vehicle', 'Moon')]
+                                   propagation_setup.dependent_variable.flight_path_angle('Vehicle', 'Moon'),
+                                   propagation_setup.dependent_variable.relative_position('Vehicle', 'Moon'),
+                                   propagation_setup.dependent_variable.single_acceleration(
+                                       propagation_setup.acceleration.thrust_acceleration_type, 'Vehicle', 'Vehicle')]
+
     return dependent_variables_to_save
 
 # NOTE TO STUDENTS: THIS FUNCTION SHOULD BE EXTENDED TO USE MORE INTEGRATORS FOR ASSIGNMENT 1.
@@ -263,11 +267,10 @@ def get_propagator_settings(thrust_parameters,
     central_bodies = ['Moon']
 
     # Define accelerations acting on vehicle
-    thrust_settings = get_thrust_acceleration_model_from_parameters(
+    thrust_settings, guidance_object = get_thrust_acceleration_model_from_parameters(
         thrust_parameters,
         bodies,
-        simulation_start_epoch,
-        constant_specific_impulse)
+        simulation_start_epoch)
     acceleration_settings_on_vehicle = {
         'Moon': [propagation_setup.acceleration.point_mass_gravity()],
         'Vehicle': [thrust_settings]
@@ -378,7 +381,11 @@ class LunarAscentThrustGuidance:
         for i in range(len(parameter_vector) - 2):
             # Store time as key, thrust angle as value
             self.thrust_angle_dict[current_time] = parameter_vector[i + 2]
-            self.thrust_angle_derivative_dict.append( 0.0 )
+            if( i == 0 or i + 2 == ( len(parameter_vector) -1 ) ):
+                self.thrust_angle_derivative_dict.append( 0.0 )
+            else:
+                self.thrust_angle_derivative_dict.append((parameter_vector[i + 3] - parameter_vector[i + 1])/(2.0*self.time_interval))
+            #self.thrust_angle_derivative_dict.append( 0.0 )
 
             # Increase time
             current_time += self.time_interval
@@ -392,6 +399,10 @@ class LunarAscentThrustGuidance:
         # Create the interpolator between nodes and set it as attribute
         self.thrust_angle_interpolator = interpolators.create_one_dimensional_scalar_interpolator(
             self.thrust_angle_dict, interpolator_settings, self.thrust_angle_derivative_dict )
+
+    def get_current_thrust_angle(self,
+                                 time: float):
+        return self.thrust_angle
 
     def get_current_thrust_direction(self,
                                      time: float) -> np.array:
@@ -412,12 +423,13 @@ class LunarAscentThrustGuidance:
             Thrust direction expressed in the inertial frame.
         """
         # Interpolate with time
-        angle = self.thrust_angle_interpolator.interpolate(time)
+        self.thrust_angle = self.thrust_angle_interpolator.interpolate(time)
+        print(time,self.thrust_angle)
         # Set thrust in vertical frame and transpose it
-        thrust_direction_vertical_frame = np.array([[0, np.sin(angle), - np.cos(angle)]]).T
+        thrust_direction_vertical_frame = np.array([[0, np.sin( self.thrust_angle ), - np.cos( self.thrust_angle )]]).T
         # Update flight conditions (this is needed to let tudat know to update all variables)
         self.vehicle_body.flight_conditions.update_conditions(time)
-        print('Time',time,'Angle',angle,'Altitude',self.vehicle_body.flight_conditions.altitude)
+        # print('Time',time,'Angle', self.thrust_angle ,'Altitude',self.vehicle_body.flight_conditions.altitude)
 
         # Get aerodynamic angle calculator
         aerodynamic_angle_calculator = self.vehicle_body.flight_conditions.aerodynamic_angle_calculator
@@ -432,8 +444,7 @@ class LunarAscentThrustGuidance:
 
 def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
                                                   bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                                  initial_time: float,
-                                                  specific_impulse: float) -> \
+                                                  initial_time: float) -> \
         tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings:
     """
     Creates the thrust acceleration models from the LunarAscentThrustGuidance class and sets it in the propagator.
@@ -451,8 +462,8 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
 
     Returns
     -------
-    tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings
-        Thrust acceleration settings object.
+    tuple[ tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings, LunarAscentThrustGuidance]
+        Thrust acceleration settings object and guidance object
     """
     # Create Thrust Guidance object
     thrust_guidance = LunarAscentThrustGuidance(bodies.get_body('Vehicle'),
@@ -477,7 +488,7 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
     acceleration_settings = propagation_setup.acceleration.thrust_from_engine( 'MainEngine' )
 
     # Create and return thrust acceleration settings
-    return acceleration_settings
+    return [acceleration_settings, thrust_guidance]
 
 
 ###########################################################################

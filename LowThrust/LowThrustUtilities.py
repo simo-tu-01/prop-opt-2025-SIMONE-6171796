@@ -107,10 +107,10 @@ def get_dependent_variable_save_settings() -> list:
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.relative_distance('Vehicle', 'Earth'),
-                                   propagation_setup.dependent_variable.relative_distance('Vehicle', 'Sun'),
                                    propagation_setup.dependent_variable.relative_distance('Vehicle', 'Mars'),
                                    propagation_setup.dependent_variable.single_acceleration_norm(
-                                       propagation_setup.acceleration.thrust_acceleration_type,'Vehicle','Vehicle')]
+                                       propagation_setup.acceleration.thrust_acceleration_type,'Vehicle','Vehicle'),
+                                   propagation_setup.dependent_variable.relative_position('Vehicle', 'Sun')]
     return dependent_variables_to_save
 
 
@@ -226,6 +226,8 @@ def get_propagator_settings( trajectory_parameters,
         acceleration_models,
         bodies_to_propagate,
         initial_state,
+        initial_propagation_time,
+        None,
         termination_settings,
         current_propagator,
         output_variables=dependent_variables_to_save)
@@ -239,6 +241,8 @@ def get_propagator_settings( trajectory_parameters,
     mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
                                                                  mass_rate_models,
                                                                  np.array([vehicle_initial_mass]),
+                                                                 initial_propagation_time,
+                                                                 None,
                                                                  termination_settings)
 
     # Create multi-type propagation settings list
@@ -247,6 +251,8 @@ def get_propagator_settings( trajectory_parameters,
 
     # Create multi-type propagation settings object
     propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
+                                                                 None,
+                                                                 initial_propagation_time,
                                                                  termination_settings,
                                                                  dependent_variables_to_save)
 
