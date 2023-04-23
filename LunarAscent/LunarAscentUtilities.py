@@ -230,44 +230,72 @@ def get_integrator_settings(propagator_index: int,
         # Here (epsilon, inf) are set as respectively min and max step sizes
         # also note that the relative and absolute tolerances are the same value
         integrator_settings = integrator.runge_kutta_variable_step_size(
-            simulation_start_epoch,
             1.0,
             current_coefficient_set,
-            1.0E-2,
+            1.0E-4,
             np.inf,
             current_tolerance,
-            current_tolerance,
-            throw_exception_if_minimum_step_exceeded = False )
+            current_tolerance )
     # Use fixed step-size integrator
     else:
         # Compute time step
         fixed_step_size = 2 ** settings_index
         # Create integrator settings
         integrator = propagation_setup.integrator
-        integrator_settings = integrator.runge_kutta_4(simulation_start_epoch,
-                                                       fixed_step_size)
+        integrator_settings = integrator.runge_kutta_fixed_step_size(
+            fixed_step_size, propagation_setup.integrator.CoefficientSets.rk_4)
     return integrator_settings
 
 
 def get_propagator_settings(thrust_parameters,
                             bodies,
                             simulation_start_epoch,
-                            constant_specific_impulse,
                             vehicle_initial_mass,
                             termination_settings,
                             dependent_variables_to_save,
                             current_propagator = propagation_setup.propagator.cowell ):
+    """
+    Creates the propagator settings.
+
+    This function creates the propagator settings for translational motion and mass, for the given simulation settings
+    Note that, in this function, the thrust_parameters are used to update the engine model and rotation model of the
+    vehicle. The propagator settings that are returned as output of this function are not yet usable: they do not
+    contain any integrator settings, which should be set at a later point by the user
+
+    Parameters
+    ----------
+    thrust_parameters : list[ float ]
+        List of free parameters for the thrust model, which will be used to update the vehicle properties such that
+        the new thrust/magnitude direction are used. The meaning of the parameters in this list is stated at the
+        start of the *Propagation.py file
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    simulation_start_epoch : float
+        Start of the simulation [s] with t=0 at J2000.
+    vehicle_initial_mass : float
+        Mass of the vehicle to be used at the initial time
+    termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
+        Propagation termination settings object to be used
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
+        List of dependent variables to save.
+    current_propagator : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalPropagatorType
+        Type of propagator to be used for translational dynamics
+
+    Returns
+    -------
+    propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.MultiTypePropagatorSettings
+        Propagator settings to be provided to the dynamics simulator.
+    """
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Moon']
 
     # Define accelerations acting on vehicle
-    thrust_settings = get_thrust_acceleration_model_from_parameters(
+    thrust_settings = set_thrust_acceleration_model_from_parameters(
         thrust_parameters,
         bodies,
-        simulation_start_epoch,
-        constant_specific_impulse)
+        simulation_start_epoch)
     acceleration_settings_on_vehicle = {
         'Moon': [propagation_setup.acceleration.point_mass_gravity()],
         'Vehicle': [thrust_settings]
@@ -283,7 +311,7 @@ def get_propagator_settings(thrust_parameters,
     # Retrieve initial state
     initial_state = get_initial_state(simulation_start_epoch, bodies)
 
-    # Create propagation settings for the benchmark
+    # Create propagation settings for the translational dynamics
     translational_propagator_settings = propagation_setup.propagator.translational(
         central_bodies,
         acceleration_models,
@@ -301,7 +329,7 @@ def get_propagator_settings(thrust_parameters,
                                                                  mass_rate_settings_on_vehicle,
                                                                  acceleration_models)
 
-    # Create mass propagator settings (same for all propagations)
+    # Create mass propagator settings
     mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
                                                                  mass_rate_models,
                                                                  np.array([vehicle_initial_mass]),
@@ -313,7 +341,8 @@ def get_propagator_settings(thrust_parameters,
     propagator_settings_list = [translational_propagator_settings,
                                 mass_propagator_settings]
 
-    # Create multi-type propagation settings object
+    # Create multi-type propagation settings object for translational dynamics and mass.
+    # NOTE: these are not yet 'valid', as no integrator settings are defined yet
     propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
                                                                  None,
                                                                  simulation_start_epoch,
@@ -362,7 +391,6 @@ class LunarAscentThrustGuidance:
         -------
         none
         """
-        print('Initializing guidance...')
         # Set arguments as attributes
         self.vehicle_body = vehicle_body
         self.initial_time = initial_time
@@ -374,21 +402,33 @@ class LunarAscentThrustGuidance:
 
         # Initialize time
         current_time = initial_time
+
         # Loop over nodes
         for i in range(len(parameter_vector) - 2):
+
             # Store time as key, thrust angle as value
             self.thrust_angle_dict[current_time] = parameter_vector[i + 2]
-            self.thrust_angle_derivative_dict.append( 0.0 )
+
+            # Set thrust angle derivative as central difference from previous and next node, except on first and last node
+            # where derivative is set to 0
+            if (i == 0 or i + 2 == (len(parameter_vector) - 1)):
+                self.thrust_angle_derivative_dict.append(0.0)
+            else:
+                self.thrust_angle_derivative_dict.append(
+                    (parameter_vector[i + 3] - parameter_vector[i + 1]) / (2.0 * self.time_interval))
 
             # Increase time
             current_time += self.time_interval
+
+        # Add final node 1 day after the fine node, and set its thrust value equal to that on the final node,
+        # and teh angle derivative to 0.
         self.thrust_angle_dict[current_time + 86400.0 ] = parameter_vector[-1]
         self.thrust_angle_derivative_dict.append( 0.0 )
-
 
         # Create interpolator settings
         interpolator_settings = interpolators.hermite_spline_interpolation(
             boundary_interpolation=interpolators.use_boundary_value)
+
         # Create the interpolator between nodes and set it as attribute
         self.thrust_angle_interpolator = interpolators.create_one_dimensional_scalar_interpolator(
             self.thrust_angle_dict, interpolator_settings, self.thrust_angle_derivative_dict )
@@ -413,11 +453,10 @@ class LunarAscentThrustGuidance:
         """
         # Interpolate with time
         angle = self.thrust_angle_interpolator.interpolate(time)
-        # Set thrust in vertical frame and transpose it
+        # Set thrust vector in vertical frame
         thrust_direction_vertical_frame = np.array([[0, np.sin(angle), - np.cos(angle)]]).T
         # Update flight conditions (this is needed to let tudat know to update all variables)
         self.vehicle_body.flight_conditions.update_conditions(time)
-        print('Time',time,'Angle',angle,'Altitude',self.vehicle_body.flight_conditions.altitude)
 
         # Get aerodynamic angle calculator
         aerodynamic_angle_calculator = self.vehicle_body.flight_conditions.aerodynamic_angle_calculator
@@ -430,10 +469,9 @@ class LunarAscentThrustGuidance:
                                        thrust_direction_vertical_frame)
         return thrust_inertial_frame
 
-def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
+def set_thrust_acceleration_model_from_parameters(thrust_parameters: list,
                                                   bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                                  initial_time: float,
-                                                  specific_impulse: float) -> \
+                                                  initial_time: float) -> \
         tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings:
     """
     Creates the thrust acceleration models from the LunarAscentThrustGuidance class and sets it in the propagator.
@@ -446,8 +484,6 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
         System of bodies present in the simulation.
     initial_time : float
         The start time of the simulation in seconds.
-    specific_impulse : float
-        Specific impulse of the vehicle.
 
     Returns
     -------
@@ -469,11 +505,7 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
     vehicle_rotation_model = bodies.get_body('Vehicle').rotation_model
     vehicle_rotation_model.inertial_body_axis_calculator.inertial_body_axis_direction_function = thrust_direction_function
 
-    # thrust_direction_settings = propagation_setup.thrust.custom_thrust_direction(thrust_direction_function)
-    #
-    # #thrust_magnitude_settings = propagation_setup.thrust.custom_thrust_magnitude(thrust_magnitude_function,specific_impulse)
-    # thrust_magnitude_settings = propagation_setup.thrust.constant_thrust_magnitude(thrust_magnitude, specific_impulse)
-
+    # Create thrust acceleration settings
     acceleration_settings = propagation_setup.acceleration.thrust_from_engine( 'MainEngine' )
 
     # Create and return thrust acceleration settings
@@ -487,7 +519,6 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
-                        simulation_start_epoch: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
                         tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
@@ -506,8 +537,6 @@ def generate_benchmarks(benchmark_step_size: float,
 
     Parameters
     ----------
-    simulation_start_epoch : float
-        The start time of the simulation in seconds.
     bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     benchmark_propagator_settings
