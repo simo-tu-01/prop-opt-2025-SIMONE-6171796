@@ -233,7 +233,7 @@ def get_propagator_settings( trajectory_parameters,
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Sun']
     # Update vehicle rotation model and thrust magnitude model
-    set_hodograph_thrust_model(trajectory_parameters, bodies)
+    transfer_trajectory = set_hodograph_thrust_model(trajectory_parameters, bodies)
     # Define accelerations acting on capsule
     acceleration_settings_on_vehicle = {
         'Sun': [propagation_setup.acceleration.point_mass_gravity()],
@@ -248,9 +248,7 @@ def get_propagator_settings( trajectory_parameters,
         central_bodies)
 
     # Retrieve initial state
-    initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
-                                                 bodies,
-                                                 initial_propagation_time)
+    initial_state = transfer_trajectory.legs[ 0 ].state_along_trajectory( initial_propagation_time )
 
     # Create propagation settings for the translational dynamics
     translational_propagator_settings = propagation_setup.propagator.translational(
@@ -334,6 +332,32 @@ def get_trajectory_initial_time(trajectory_parameters: list,
     """
     return trajectory_parameters[0] * constants.JULIAN_DAY + buffer_time
 
+def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
+                               output_path: str ):
+    """
+    It computes the analytical hodographic trajectory and saves the results to a file
+    This function analytically calculates the hodographic trajectory from the Hodographic Shaping object.
+    * hodographic_trajectory.dat: Cartesian states of semi-analytical trajectory;
+    Parameters
+    ----------
+    shaping_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
+        TransferTrajectory object with a single leg: the hodographic shaping leg from Earth to Mars
+    output_path : str (default: None)
+        If and where to save the benchmark results (if None, results are NOT written).
+    Returns
+    -------
+    none
+    """
+
+    # Set number of data points
+    number_of_data_points = 10000
+
+    # Extract trajectory shape
+    trajectory_shape = shaping_object.states_along_trajectory(number_of_data_points)
+    # If desired, save results to files
+    save2txt(trajectory_shape,
+                 'hodographic_trajectory.dat',
+                 output_path)
 
 def get_trajectory_final_time(trajectory_parameters: list,
                               buffer_time: float = 0.0) -> float:
@@ -456,7 +480,7 @@ def get_axial_velocity_shaping_functions(trajectory_parameters: list,
 
     Parameters
     ----------
-    trajectory_parameters : list
+    trajectory_parameters : list[ float ]
         List of trajectory parameters to optimize.
     frequency: float
         Frequency of the highest-order methods.
@@ -493,7 +517,7 @@ def get_axial_velocity_shaping_functions(trajectory_parameters: list,
 
 
 def create_hodographic_trajectory(trajectory_parameters: list,
-                                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
+                                  bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
         -> tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory:
     """
     It creates and returns the hodographic shaping object, based on the trajectory parameters.
@@ -572,11 +596,11 @@ def set_hodograph_thrust_model(trajectory_parameters: list,
                                bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies):
     """
     It extracts the acceleration settings resulting from the hodographic trajectory and returns the equivalent thrust
-    acceleration settings object.
+    acceleration settings object. In addition, it returns teh transfer trajectory object for later use in the code
 
     Parameters
     ----------
-    trajectory_parameters : list
+    trajectory_parameters : list[float]
         List of trajectory parameters to be optimized.
     bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
@@ -587,45 +611,10 @@ def set_hodograph_thrust_model(trajectory_parameters: list,
     """
     # Create shaping object
     trajectory_object = create_hodographic_trajectory(trajectory_parameters, bodies)
-
-
     transfer_trajectory.set_low_thrust_acceleration( trajectory_object.legs[ 0 ], bodies, 'Vehicle', 'LowThrustEngine' )
-    # # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
-    # # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
-    # # trajectory and the beginning of the simulation
-    # time_offset = get_trajectory_initial_time(trajectory_parameters)
-    # # Create specific impulse lambda function
-    # specific_impulse_function = lambda t: specific_impulse
 
-
-
-
-
-def get_hodograph_state_at_epoch(trajectory_parameters: list,
-                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                 epoch: float) -> np.ndarray:
-    """
-    It retrieves the Cartesian state, expressed in the inertial frame, at a given epoch of the analytical trajectory.
-
-    Parameters
-    ----------
-    trajectory_parameters : list
-        List of trajectory parameters to be optimized.
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
-        System of bodies present in the simulation.
-
-    Returns
-    -------
-    np.ndarray
-        Cartesian state in the inertial frame of the spacecraft at the given epoch.
-    """
-    # Create shaping object
-    transfer_trajectory = create_hodographic_trajectory(trajectory_parameters,
-                                                       bodies)
-    hodographic_leg = transfer_trajectory.legs[ 0 ]
-    # Define current hodograph time
-    # hodograph_time = epoch - get_trajectory_initial_time(trajectory_parameters)
-    return hodographic_leg.state_along_trajectory( epoch )
+    # Return trajectory object
+    return trajectory_object
 
 ###########################################################################
 # BENCHMARK UTILITIES #####################################################

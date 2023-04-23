@@ -115,6 +115,7 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+
 # General imports
 import numpy as np
 import os
@@ -274,6 +275,24 @@ if use_benchmark:
                                                                  second_benchmark_dependent_variable_history,
                                                                  benchmark_output_path,
                                                                  'benchmarks_dependent_variable_difference.dat')
+
+###########################################################################
+# # WRITE RESULTS FOR SEMI-ANALYTICAL METHOD ################################
+# ###########################################################################
+
+# Create problem without propagating
+hodographic_shaping_object = Util.create_hodographic_trajectory(trajectory_parameters,
+                                                                bodies)
+
+
+# Prepares output path
+if write_results_to_file:
+    output_path = current_dir + '/SimulationOutput/HodographicSemiAnalytical/'
+else:
+    output_path = None
+# Retrieves analytical results and write them to a file
+Util.get_hodographic_trajectory(hodographic_shaping_object,
+                                output_path)
 
 ###########################################################################
 # RUN SIMULATION FOR VARIOUS SETTINGS #####################################
