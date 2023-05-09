@@ -215,10 +215,10 @@ def get_integrator_settings(propagator_index: int,
 
     """
     # Define list of multi-stage integrators
-    multi_stage_integrators = [propagation_setup.integrator.RKCoefficientSets.rkf_45,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_56,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_78,
-                               propagation_setup.integrator.RKCoefficientSets.rkdp_87]
+    multi_stage_integrators = [propagation_setup.integrator.CoefficientSets.rkf_45,
+                               propagation_setup.integrator.CoefficientSets.rkf_56,
+                               propagation_setup.integrator.CoefficientSets.rkf_78,
+                               propagation_setup.integrator.CoefficientSets.rkdp_87]
     # Use variable step-size integrator
     if integrator_index < 4:
         # Select variable-step integrator
@@ -230,61 +230,77 @@ def get_integrator_settings(propagator_index: int,
         # Here (epsilon, inf) are set as respectively min and max step sizes
         # also note that the relative and absolute tolerances are the same value
         integrator_settings = integrator.runge_kutta_variable_step_size(
-            simulation_start_epoch,
             1.0,
             current_coefficient_set,
-            1.0E-2,
+            1.0E-4,
             np.inf,
             current_tolerance,
-            current_tolerance,
-            throw_exception_if_minimum_step_exceeded = False )
+            current_tolerance )
     # Use fixed step-size integrator
     else:
         # Compute time step
         fixed_step_size = 2 ** settings_index
         # Create integrator settings
         integrator = propagation_setup.integrator
-        integrator_settings = integrator.runge_kutta_4(simulation_start_epoch,
-                                                       fixed_step_size)
+        integrator_settings = integrator.runge_kutta_fixed_step_size(
+            fixed_step_size, propagation_setup.integrator.CoefficientSets.rk_4)
     return integrator_settings
 
 
 def get_propagator_settings(thrust_parameters,
                             bodies,
                             simulation_start_epoch,
-                            constant_specific_impulse,
                             vehicle_initial_mass,
                             termination_settings,
                             dependent_variables_to_save,
-                            current_propagator = propagation_setup.propagator.cowell,
-                            model_choice = 0,
-                            initial_state_perturbation = np.zeros( 6 ) ):
+                            current_propagator = propagation_setup.propagator.cowell ):
+    """
+    Creates the propagator settings.
+
+    This function creates the propagator settings for translational motion and mass, for the given simulation settings
+    Note that, in this function, the thrust_parameters are used to update the engine model and rotation model of the
+    vehicle. The propagator settings that are returned as output of this function are not yet usable: they do not
+    contain any integrator settings, which should be set at a later point by the user
+
+    Parameters
+    ----------
+    thrust_parameters : list[ float ]
+        List of free parameters for the thrust model, which will be used to update the vehicle properties such that
+        the new thrust/magnitude direction are used. The meaning of the parameters in this list is stated at the
+        start of the *Propagation.py file
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    simulation_start_epoch : float
+        Start of the simulation [s] with t=0 at J2000.
+    vehicle_initial_mass : float
+        Mass of the vehicle to be used at the initial time
+    termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
+        Propagation termination settings object to be used
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
+        List of dependent variables to save.
+    current_propagator : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalPropagatorType
+        Type of propagator to be used for translational dynamics
+
+    Returns
+    -------
+    propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.MultiTypePropagatorSettings
+        Propagator settings to be provided to the dynamics simulator.
+    """
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Moon']
 
     # Define accelerations acting on vehicle
-    thrust_settings = get_thrust_acceleration_model_from_parameters(
+    thrust_settings = set_thrust_acceleration_model_from_parameters(
         thrust_parameters,
         bodies,
-        simulation_start_epoch,
-        constant_specific_impulse)
-
-    # Accelerations for the nominal model (model_test = 0)
+        simulation_start_epoch)
     acceleration_settings_on_vehicle = {
-        'Vehicle': [thrust_settings],
-        'Moon': [propagation_setup.acceleration.spherical_harmonic_gravity(2, 2)]}
-
-    # Here, model settings are modified
-    if model_choice == 1:
-        acceleration_settings_on_vehicle['Moon'] = [propagation_setup.acceleration.point_mass_gravity()]
-    elif model_choice == 2:
-        acceleration_settings_on_vehicle['Moon'] = [propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)]
-    elif model_choice > 2:
-        acceleration_settings_on_vehicle['Earth'] = [propagation_setup.acceleration.point_mass_gravity()]
-
-    # Create global accelerations dictionary
+        'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        'Vehicle': [thrust_settings]
+    }
+    # Create acceleration models.
     acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
     acceleration_models = propagation_setup.create_acceleration_models(
         bodies,
@@ -293,14 +309,16 @@ def get_propagator_settings(thrust_parameters,
         central_bodies)
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch, bodies) + initial_state_perturbation
+    initial_state = get_initial_state(simulation_start_epoch, bodies)
 
-    # Create propagation settings for the benchmark
+    # Create propagation settings for the translational dynamics
     translational_propagator_settings = propagation_setup.propagator.translational(
         central_bodies,
         acceleration_models,
         bodies_to_propagate,
         initial_state,
+        simulation_start_epoch,
+        None,
         termination_settings,
         current_propagator,
         output_variables=dependent_variables_to_save)
@@ -311,21 +329,25 @@ def get_propagator_settings(thrust_parameters,
                                                                  mass_rate_settings_on_vehicle,
                                                                  acceleration_models)
 
-    # Create mass propagator settings (same for all propagations)
+    # Create mass propagator settings
     mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
                                                                  mass_rate_models,
                                                                  np.array([vehicle_initial_mass]),
+                                                                 simulation_start_epoch,
+                                                                 None,
                                                                  termination_settings)
 
     # Create multi-type propagation settings list
     propagator_settings_list = [translational_propagator_settings,
                                 mass_propagator_settings]
 
-    # Create multi-type propagation settings object
+    # Create multi-type propagation settings object for translational dynamics and mass.
+    # NOTE: these are not yet 'valid', as no integrator settings are defined yet
     propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
+                                                                 None,
+                                                                 simulation_start_epoch,
                                                                  termination_settings,
                                                                  dependent_variables_to_save)
-
 
     return propagator_settings
 
@@ -376,20 +398,40 @@ class LunarAscentThrustGuidance:
         self.time_interval = parameter_vector[1]
         # Prepare dictionary for thrust angles
         self.thrust_angle_dict = {}
+        self.thrust_angle_derivative_dict = list()
+
         # Initialize time
         current_time = initial_time
+
         # Loop over nodes
         for i in range(len(parameter_vector) - 2):
+
             # Store time as key, thrust angle as value
             self.thrust_angle_dict[current_time] = parameter_vector[i + 2]
+
+            # Set thrust angle derivative as central difference from previous and next node, except on first and last node
+            # where derivative is set to 0
+            if (i == 0 or i + 2 == (len(parameter_vector) - 1)):
+                self.thrust_angle_derivative_dict.append(0.0)
+            else:
+                self.thrust_angle_derivative_dict.append(
+                    (parameter_vector[i + 3] - parameter_vector[i + 1]) / (2.0 * self.time_interval))
+
             # Increase time
             current_time += self.time_interval
+
+        # Add final node 1 day after the fine node, and set its thrust value equal to that on the final node,
+        # and teh angle derivative to 0.
+        self.thrust_angle_dict[current_time + 86400.0 ] = parameter_vector[-1]
+        self.thrust_angle_derivative_dict.append( 0.0 )
+
         # Create interpolator settings
-        interpolator_settings = interpolators.linear_interpolation(
+        interpolator_settings = interpolators.hermite_spline_interpolation(
             boundary_interpolation=interpolators.use_boundary_value)
+
         # Create the interpolator between nodes and set it as attribute
         self.thrust_angle_interpolator = interpolators.create_one_dimensional_scalar_interpolator(
-            self.thrust_angle_dict, interpolator_settings )
+            self.thrust_angle_dict, interpolator_settings, self.thrust_angle_derivative_dict )
 
     def get_current_thrust_direction(self,
                                      time: float) -> np.array:
@@ -411,10 +453,11 @@ class LunarAscentThrustGuidance:
         """
         # Interpolate with time
         angle = self.thrust_angle_interpolator.interpolate(time)
-        # Set thrust in vertical frame and transpose it
+        # Set thrust vector in vertical frame
         thrust_direction_vertical_frame = np.array([[0, np.sin(angle), - np.cos(angle)]]).T
         # Update flight conditions (this is needed to let tudat know to update all variables)
         self.vehicle_body.flight_conditions.update_conditions(time)
+
         # Get aerodynamic angle calculator
         aerodynamic_angle_calculator = self.vehicle_body.flight_conditions.aerodynamic_angle_calculator
         # Retrieve rotation matrix from vertical to inertial frame from the aerodynamic angle calculator
@@ -426,10 +469,9 @@ class LunarAscentThrustGuidance:
                                        thrust_direction_vertical_frame)
         return thrust_inertial_frame
 
-def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
+def set_thrust_acceleration_model_from_parameters(thrust_parameters: list,
                                                   bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                                  initial_time: float,
-                                                  specific_impulse: float) -> \
+                                                  initial_time: float) -> \
         tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings:
     """
     Creates the thrust acceleration models from the LunarAscentThrustGuidance class and sets it in the propagator.
@@ -442,8 +484,6 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
         System of bodies present in the simulation.
     initial_time : float
         The start time of the simulation in seconds.
-    specific_impulse : float
-        Specific impulse of the vehicle.
 
     Returns
     -------
@@ -456,16 +496,17 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
                                                 thrust_parameters)
     # Retrieves thrust functions
     thrust_direction_function = thrust_guidance.get_current_thrust_direction
-    thrust_magnitude = thrust_parameters[0]
+
+    # Retrieve engine model and reset thrust level
+    main_engine_model = bodies.get_body('Vehicle').system_models.get_engine_model( 'MainEngine' )
+    main_engine_model.thrust_magnitude_calculator.constant_thrust_magnitude = thrust_parameters[0]
+
     # Set thrust functions in the acceleration model
+    vehicle_rotation_model = bodies.get_body('Vehicle').rotation_model
+    vehicle_rotation_model.inertial_body_axis_calculator.inertial_body_axis_direction_function = thrust_direction_function
 
-    thrust_direction_settings = propagation_setup.thrust.custom_thrust_direction(thrust_direction_function)
-
-    #thrust_magnitude_settings = propagation_setup.thrust.custom_thrust_magnitude(thrust_magnitude_function,specific_impulse)
-    thrust_magnitude_settings = propagation_setup.thrust.constant_thrust_magnitude(thrust_magnitude, specific_impulse)
-
-    acceleration_settings = propagation_setup.acceleration.thrust_from_direction_and_magnitude(
-        thrust_direction_settings, thrust_magnitude_settings)
+    # Create thrust acceleration settings
+    acceleration_settings = propagation_setup.acceleration.thrust_from_engine( 'MainEngine' )
 
     # Create and return thrust acceleration settings
     return acceleration_settings
@@ -478,7 +519,6 @@ def get_thrust_acceleration_model_from_parameters(thrust_parameters: list,
 
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size: float,
-                        simulation_start_epoch: float,
                         bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
                         benchmark_propagator_settings:
                         tudatpy.kernel.numerical_simulation.propagation_setup.propagator.MultiTypePropagatorSettings,
@@ -497,8 +537,6 @@ def generate_benchmarks(benchmark_step_size: float,
 
     Parameters
     ----------
-    simulation_start_epoch : float
-        The start time of the simulation in seconds.
     bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     benchmark_propagator_settings
@@ -519,38 +557,29 @@ def generate_benchmarks(benchmark_step_size: float,
     # Define benchmarks' step sizes
     first_benchmark_step_size = benchmark_step_size  # s
     second_benchmark_step_size = 2.0 * first_benchmark_step_size
+
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
-    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
+    benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         first_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
-        first_benchmark_step_size,
-        first_benchmark_step_size,
-        np.inf,
-        np.inf)
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
+    benchmark_propagator_settings.print_settings.print_dependent_variable_indices = True
 
     print('Running first benchmark...')
-    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    first_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=True)
+        benchmark_propagator_settings)
 
     # Create integrator settings for the second benchmark in the same way
-    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
+    benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         second_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
-        second_benchmark_step_size,
-        second_benchmark_step_size,
-        np.inf,
-        np.inf)
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
+    benchmark_propagator_settings.print_settings.print_dependent_variable_indices = False
 
     print('Running second benchmark...')
-    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    second_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=False)
+        benchmark_propagator_settings)
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
     # Retrieve state history
@@ -623,51 +652,3 @@ def compare_benchmarks(first_benchmark: dict,
         save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference
-
-
-
-def compare_models(first_model: dict,
-                   second_model: dict,
-                   interpolation_epochs: np.ndarray,
-                   output_path: str,
-                   filename: str) -> dict:
-    """
-    It compares the results of two runs with different model settings.
-    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
-    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
-    filename and placed in the directory output_path.
-    Parameters
-    ----------
-    first_model : dict
-        State (or dependent variable history) from the first run.
-    second_model : dict
-        State (or dependent variable history) from the second run.
-    interpolation_epochs : np.ndarray
-        Vector of epochs at which the two runs are compared.
-    output_path : str
-        If and where to save the benchmark results (if None, results are NOT written).
-    filename : str
-        Name of the output file.
-    Returns
-    -------
-    model_difference : dict
-        Interpolated difference between the two simulations' state (or dependent variable) history.
-    """
-    # Create interpolator settings
-    interpolator_settings = interpolators.lagrange_interpolation(
-        8, boundary_interpolation=interpolators.use_boundary_value)
-    # Create 8th-order Lagrange interpolator for both cases
-    first_interpolator = interpolators.create_one_dimensional_vector_interpolator(
-        first_model, interpolator_settings)
-    second_interpolator = interpolators.create_one_dimensional_vector_interpolator(
-        second_model, interpolator_settings)
-    # Calculate the difference between the first and second model at specific epochs
-    model_difference = {epoch: second_interpolator.interpolate(epoch) - first_interpolator.interpolate(epoch)
-                        for epoch in interpolation_epochs}
-    # Write results to files
-    if output_path is not None:
-        save2txt(model_difference,
-                 filename,
-                 output_path)
-    # Return the model difference
-    return model_difference

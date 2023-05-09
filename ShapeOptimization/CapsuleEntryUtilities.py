@@ -197,10 +197,10 @@ def get_integrator_settings(propagator_index: int,
         Integrator settings to be provided to the dynamics simulator.
     """
     # Define list of multi-stage integrators
-    multi_stage_integrators = [propagation_setup.integrator.RKCoefficientSets.rkf_45,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_56,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_78,
-                               propagation_setup.integrator.RKCoefficientSets.rkdp_87]
+    multi_stage_integrators = [propagation_setup.integrator.CoefficientSets.rkf_45,
+                               propagation_setup.integrator.CoefficientSets.rkf_56,
+                               propagation_setup.integrator.CoefficientSets.rkf_78,
+                               propagation_setup.integrator.CoefficientSets.rkdp_87]
 
     # Use variable step-size integrator
     if integrator_index < 4:
@@ -236,24 +236,48 @@ def get_propagator_settings(shape_parameters,
                             simulation_start_epoch,
                             termination_settings,
                             dependent_variables_to_save,
-                            current_propagator = propagation_setup.propagator.cowell,
-                            model_choice = 0,
-                            initial_state_perturbation = np.zeros( 6 ) ):
+                            current_propagator = propagation_setup.propagator.cowell ):
+    """
+    Creates the propagator settings.
+
+    This function creates the propagator settings for translational motion and mass, for the given simulation settings
+    Note that, in this function, the entry of the shape_parameters representing the vehicle attitude (angle of attack)
+    is processed to redefine the vehice attitude. The propagator settings that are returned as output of this function
+    are not yet usable: they do not contain any integrator settings, which should be set at a later point by the user
+
+    Parameters
+    ----------
+    shape_parameters : list[ float ]
+        List of free parameters for the low-thrust model, which will be used to update the vehicle properties such that
+        the new thrust/magnitude direction are used. The meaning of the parameters in this list is stated at the
+        start of the *Propagation.py file
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    simulation_start_epoch : float
+        Start of the simulation [s] with t=0 at J2000.
+    termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
+        Propagation termination settings object to be used
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
+        List of dependent variables to save.
+    current_propagator : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalPropagatorType
+        Type of propagator to be used for translational dynamics
+
+    Returns
+    -------
+    propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.MultiTypePropagatorSettings
+        Propagator settings to be provided to the dynamics simulator.
+    """
 
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Capsule']
     central_bodies = ['Earth']
 
-    # Define accelerations for the nominal case
-    acceleration_settings_on_vehicle = {'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(2, 2),
-                                                  propagation_setup.acceleration.aerodynamic()]}
-    # Here different acceleration models are defined
-    if model_choice == 1:
-        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.point_mass_gravity()
-    elif model_choice == 2:
-        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)
-
-    # Create global accelerations' dictionary
+    # Define accelerations acting on capsule
+    acceleration_settings_on_vehicle = {
+        'Earth': [propagation_setup.acceleration.point_mass_gravity(),
+                  propagation_setup.acceleration.aerodynamic()]
+    }
+    # Create acceleration models.
     acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
     acceleration_models = propagation_setup.create_acceleration_models(
         bodies,
@@ -261,19 +285,22 @@ def get_propagator_settings(shape_parameters,
         bodies_to_propagate,
         central_bodies)
 
-    # Set vehicle body orientation (constant angle of attack, zero sideslip and bank angle)
-    environment_setup.set_constant_aerodynamic_orientation(
-        bodies.get_body('Capsule'),shape_parameters[5], 0.0, 0.0,
-        silence_warnings=True )
+    new_angles = np.array([shape_parameters[5], 0.0, 0.0])
+    new_angle_function = lambda time : new_angles
+    bodies.get_body('Capsule').rotation_model.reset_aerodynamic_angle_function( new_angle_function )
+
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch,bodies) + initial_state_perturbation
+    initial_state = get_initial_state(simulation_start_epoch,bodies)
 
-    # Create propagation settings for the benchmark
+    # Create propagation settings for the translational dynamics. NOTE: these are not yet 'valid', as no
+    # integrator settings are defined yet
     propagator_settings = propagation_setup.propagator.translational(central_bodies,
                                                                      acceleration_models,
                                                                      bodies_to_propagate,
                                                                      initial_state,
+                                                                     simulation_start_epoch,
+                                                                     None,
                                                                      termination_settings,
                                                                      current_propagator,
                                                                      output_variables=dependent_variables_to_save)
@@ -416,6 +443,12 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.envir
     """
     # Create new vehicle object and add it to the existing system of bodies
     bodies.create_empty_body('Capsule')
+    constant_angles = np.zeros([3,1])
+    constant_angles[ 0 ] = shape_parameters[ 5 ]
+    angle_function = lambda time : constant_angles
+    environment_setup.add_rotation_model( bodies, 'Capsule',
+                                          environment_setup.rotation_model.aerodynamic_angle_based(
+                                              'Earth', 'J2000', 'CapsuleFixed', angle_function ))
     # Update the capsule shape parameters
     set_capsule_shape_parameters(shape_parameters,
                                  bodies,
@@ -473,36 +506,26 @@ def generate_benchmarks(benchmark_step_size,
 
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
-    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
+    benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         first_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
-        first_benchmark_step_size,
-        first_benchmark_step_size,
-        np.inf,
-        np.inf)
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
+    benchmark_propagator_settings.print_settings.print_dependent_variable_indices = True
 
     print('Running first benchmark...')
-    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    first_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=True)
+        benchmark_propagator_settings )
 
     # Create integrator settings for the second benchmark in the same way
-    benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
+    benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         second_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
-        second_benchmark_step_size,
-        second_benchmark_step_size,
-        np.inf,
-        np.inf)
+        propagation_setup.integrator.CoefficientSets.rkdp_87)
+    benchmark_propagator_settings.print_settings.print_dependent_variable_indices = False
 
     print('Running second benchmark...')
-    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    second_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=False)
+        benchmark_propagator_settings )
 
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
@@ -576,50 +599,3 @@ def compare_benchmarks(first_benchmark: dict,
         save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference
-
-
-def compare_models(first_model: dict,
-                   second_model: dict,
-                   interpolation_epochs: np.ndarray,
-                   output_path: str,
-                   filename: str) -> dict:
-    """
-    It compares the results of two runs with different model settings.
-    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
-    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
-    filename and placed in the directory output_path.
-    Parameters
-    ----------
-    first_model : dict
-        State (or dependent variable history) from the first run.
-    second_model : dict
-        State (or dependent variable history) from the second run.
-    interpolation_epochs : np.ndarray
-        Vector of epochs at which the two runs are compared.
-    output_path : str
-        If and where to save the benchmark results (if None, results are NOT written).
-    filename : str
-        Name of the output file.
-    Returns
-    -------
-    model_difference : dict
-        Interpolated difference between the two simulations' state (or dependent variable) history.
-    """
-    # Create interpolator settings
-    interpolator_settings = interpolators.lagrange_interpolation(
-        8, boundary_interpolation=interpolators.use_boundary_value)
-    # Create 8th-order Lagrange interpolator for both cases
-    first_interpolator = interpolators.create_one_dimensional_vector_interpolator(
-        first_model, interpolator_settings)
-    second_interpolator = interpolators.create_one_dimensional_vector_interpolator(
-        second_model, interpolator_settings)
-    # Calculate the difference between the first and second model at specific epochs
-    model_difference = {epoch: second_interpolator.interpolate(epoch) - first_interpolator.interpolate(epoch)
-                        for epoch in interpolation_epochs}
-    # Write results to files
-    if output_path is not None:
-        save2txt(model_difference,
-                 filename,
-                 output_path)
-    # Return the model difference
-    return model_difference
