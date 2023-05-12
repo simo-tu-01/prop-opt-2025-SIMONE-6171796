@@ -115,6 +115,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+# import sys
+# sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+
 # General imports
 import numpy as np
 import os
@@ -146,7 +149,8 @@ trajectory_parameters = [570727221.2273525 / constants.JULIAN_DAY,
                          4207.587982407276,
                          -5594.040587888714,
                          8748.139268525232,
-                         -3449.838496679572]
+                         -3449.838496679572,
+                         0]
 
 # Choose whether benchmark is run
 use_benchmark = True
@@ -210,6 +214,13 @@ for model_test in range(number_of_models):
     # Create vehicle object and add it to the existing system of bodies
     bodies.create_empty_body('Vehicle')
     bodies.get_body('Vehicle').mass = vehicle_mass
+    thrust_magnitude_settings = (
+        propagation_setup.thrust.custom_thrust_magnitude_fixed_isp(lambda time: 0.0, specific_impulse))
+    environment_setup.add_engine_model(
+        'Vehicle', 'LowThrustEngine', thrust_magnitude_settings, bodies)
+    environment_setup.add_rotation_model(
+        bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
+            lambda time: np.array([1, 0, 0]), global_frame_orientation, 'VehcleFixed'))
 
     ###########################################################################
     # CREATE PROPAGATOR SETTINGS ##############################################
@@ -230,18 +241,17 @@ for model_test in range(number_of_models):
         trajectory_parameters,
         bodies,
         initial_propagation_time,
-        specific_impulse,
         vehicle_mass,
         termination_settings,
         dependent_variables_to_save,
         current_propagator=propagation_setup.propagator.cowell,
         model_choice = model_test )
 
-    integrator_settings = Util.get_integrator_settings(
+    propagator_settings.integrator_settings = Util.get_integrator_settings(
         0,  0, 0, initial_propagation_time)
     # Propagate dynamics
-    dynamics_simulator = numerical_simulation.SingleArcSimulator(
-        bodies, integrator_settings, propagator_settings, print_dependent_variable_data=False )
+    dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+        bodies, propagator_settings )
 
 
     ### OUTPUT OF THE SIMULATION ###

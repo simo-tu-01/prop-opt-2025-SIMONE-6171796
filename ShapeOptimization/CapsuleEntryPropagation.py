@@ -102,6 +102,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 ###########################################################################
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
+#
+# import sys
+# sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
 
 # General imports
 import numpy as np
@@ -170,7 +173,7 @@ output_interpolation_step = 2.0  # s
 for model_test in range(number_of_models):
 
     # Define settings for celestial bodies
-    bodies_to_create = ['Earth']
+    bodies_to_create = ['Earth','Moon','Sun']
     # Define coordinate system
     global_frame_origin = 'Earth'
     global_frame_orientation = 'J2000'
@@ -230,11 +233,11 @@ for model_test in range(number_of_models):
                                                        model_choice = model_test  )
 
     # Create integrator settings
-    integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
+    propagator_settings.integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
 
     # Create Shape Optimization Problem object
-    dynamics_simulator = numerical_simulation.SingleArcSimulator(
-        bodies, integrator_settings, propagator_settings, print_dependent_variable_data=False )
+    dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+        bodies, propagator_settings )
 
 
     ### OUTPUT OF THE SIMULATION ###

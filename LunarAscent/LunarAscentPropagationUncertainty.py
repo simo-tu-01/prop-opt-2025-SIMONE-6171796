@@ -105,6 +105,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+# import sys
+# sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+
 # General imports
 import numpy as np
 import random
@@ -203,6 +206,16 @@ for run in range(number_of_cases):
     # Set mass of vehicle
     bodies.get_body('Vehicle').mass = vehicle_mass
 
+    # Create thrust model, with dummy settings, to be overridden when processing the thrust parameters
+    thrust_magnitude_settings = (
+        propagation_setup.thrust.constant_thrust_magnitude(thrust_magnitude=0.0,
+                                                           specific_impulse=constant_specific_impulse))
+    environment_setup.add_engine_model(
+        'Vehicle', 'MainEngine', thrust_magnitude_settings, bodies)
+    environment_setup.add_rotation_model(
+        bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
+            lambda time: np.array([1, 0, 0]), global_frame_orientation, 'VehcleFixed'))
+
     ###########################################################################
     # CREATE PROPAGATOR SETTINGS ##############################################
     ###########################################################################
@@ -221,7 +234,6 @@ for run in range(number_of_cases):
         thrust_parameters,
         bodies,
         simulation_start_epoch,
-        constant_specific_impulse,
         vehicle_mass,
         termination_settings,
         dependent_variables_to_save,
@@ -230,12 +242,12 @@ for run in range(number_of_cases):
         initial_state_perturbation=initial_state_deviation)
 
     # Create integrator settings
-    integrator_settings = Util.get_integrator_settings(
+    propagator_settings.integrator_settings = Util.get_integrator_settings(
         0, 0, 0, simulation_start_epoch)
 
     # Create Lunar Ascent Problem object
-    dynamics_simulator = numerical_simulation.SingleArcSimulator(
-        bodies, integrator_settings, propagator_settings, print_dependent_variable_data=False )
+    dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+        bodies, propagator_settings )
 
     ### OUTPUT OF THE SIMULATION ###
     # Retrieve propagated state and dependent variables
