@@ -294,7 +294,7 @@ def get_propagator_settings(thrust_parameters,
     central_bodies = ['Moon']
 
     # Define accelerations acting on vehicle
-    thrust_settings = set_thrust_acceleration_model_from_parameters(
+    thrust_settings, thrust_guidance = set_thrust_acceleration_model_from_parameters(
         thrust_parameters,
         bodies,
         simulation_start_epoch)
@@ -321,6 +321,7 @@ def get_propagator_settings(thrust_parameters,
     # Retrieve initial state
     initial_state = get_initial_state(simulation_start_epoch, bodies) + initial_state_perturbation
 
+    dependent_variables_to_save.append( propagation_setup.dependent_variable.custom_dependent_variable( thrust_guidance.get_thrust_angle, 1 ) )
     # Create propagation settings for the translational dynamics
     translational_propagator_settings = propagation_setup.propagator.translational(
         central_bodies,
@@ -443,6 +444,11 @@ class LunarAscentThrustGuidance:
         self.thrust_angle_interpolator = interpolators.create_one_dimensional_scalar_interpolator(
             self.thrust_angle_dict, interpolator_settings, self.thrust_angle_derivative_dict )
 
+        self.current_angle = np.nan
+
+    def get_thrust_angle(self):
+        return np.array([self.current_angle])
+
     def get_current_thrust_direction(self,
                                      time: float) -> np.array:
         """
@@ -462,9 +468,9 @@ class LunarAscentThrustGuidance:
             Thrust direction expressed in the inertial frame.
         """
         # Interpolate with time
-        angle = self.thrust_angle_interpolator.interpolate(time)
+        self.current_angle = self.thrust_angle_interpolator.interpolate(time)
         # Set thrust vector in vertical frame
-        thrust_direction_vertical_frame = np.array([[0, np.sin(angle), - np.cos(angle)]]).T
+        thrust_direction_vertical_frame = np.array([[0, np.sin(self.current_angle), - np.cos(self.current_angle)]]).T
         # Update flight conditions (this is needed to let tudat know to update all variables)
         self.vehicle_body.flight_conditions.update_conditions(time)
 
@@ -519,7 +525,7 @@ def set_thrust_acceleration_model_from_parameters(thrust_parameters: list,
     acceleration_settings = propagation_setup.acceleration.thrust_from_engine( 'MainEngine' )
 
     # Create and return thrust acceleration settings
-    return acceleration_settings
+    return [ acceleration_settings, thrust_guidance ]
 
 
 ###########################################################################
