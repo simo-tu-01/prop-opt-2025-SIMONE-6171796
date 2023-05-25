@@ -115,8 +115,8 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
-import sys
-sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+# import sys
+# sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
 
 # General imports
 import numpy as np
@@ -130,6 +130,7 @@ from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.math import interpolators
+import tudatpy.util as util
 
 # Problem-specific imports
 import LowThrustUtilities as Util
@@ -240,7 +241,7 @@ elif design_space_method == 'factorial_design':
     no_of_factors = number_of_parameters
     no_of_levels = 2
     # Function that creates the yates_array
-    yates_array = Util.yates_array(no_of_levels, no_of_factors)
+    yates_array = util.get_yates_array(no_of_factors,no_of_levels)
     number_of_simulations = len(yates_array)
 
     # Evenly distributed set of values between—and including—the minimum and maximum value

@@ -106,8 +106,8 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 ###########################################################################
 
 
-import sys
-sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+# import sys
+# sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
 
 # General imports
 import numpy as np
@@ -121,6 +121,7 @@ from tudatpy.kernel.numerical_simulation import environment_setup
 from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
+import tudatpy.util as util
 
 # Problem-specific imports
 import LunarAscentUtilities as Util
@@ -212,7 +213,7 @@ decision_variable_range = \
      [20.0E3, 100.0, 0.1, 0.5 ,0.7, 1.0, 1.3]]
 
 # NOTE TO STUDENTS: HERE YOU INPUT WHAT DESIGN SPACE EXPLORATION METHOD YOU USE
-design_space_method = 'monte_carlo'
+design_space_method = 'factorial_design'
 
 number_of_parameters = len(decision_variable_range[0])
 
@@ -235,7 +236,7 @@ elif design_space_method == 'factorial_design':
     no_of_factors = number_of_parameters
     no_of_levels = 2
     # Function that creates the yates_array
-    yates_array = Util.yates_array(no_of_levels, no_of_factors)
+    yates_array = util.get_yates_array(no_of_factors,no_of_levels)
     design_variable_arr = np.zeros((no_of_levels, no_of_factors))
 
     # Evenly distributed set of values between—and including—the minimum and maximum value

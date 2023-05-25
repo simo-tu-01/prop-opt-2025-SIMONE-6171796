@@ -104,8 +104,8 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 ###########################################################################
 
 
-import sys
-sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+# import sys
+# sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
 
 # General imports
 import numpy as np
@@ -120,6 +120,7 @@ from tudatpy.kernel.numerical_simulation import propagation_setup
 from tudatpy.kernel.numerical_simulation import environment
 from tudatpy.kernel import numerical_simulation
 from tudatpy.kernel.math import interpolators
+import tudatpy.util as util
 
 # Problem-specific imports
 import CapsuleEntryUtilities as Util
@@ -199,7 +200,7 @@ decision_variable_range = \
      [ 10.0, 3.0, 5.0, np.deg2rad(-10.0), 0.5, np.deg2rad(30.0) ]]
 
 # NOTE TO STUDENTS: HERE YOU INPUT WHAT DESIGN SPACE EXPLORATION METHOD YOU USE
-design_space_method = 'monte_carlo'
+design_space_method = 'factorial_design'
 
 number_of_parameters = len(decision_variable_range[0])
 
@@ -225,7 +226,7 @@ elif design_space_method == 'factorial_design':
     no_of_factors = number_of_parameters
     no_of_levels = 2
     # Function that creates the yates_array
-    yates_array = Util.yates_array(no_of_levels, no_of_factors)
+    yates_array = util.get_yates_array(no_of_factors,no_of_levels)
     number_of_simulations = len(yates_array)
 
     # Evenly distributed set of values between minimum and maximum value
@@ -239,7 +240,6 @@ objectives_and_constraints = dict()
 
 for simulation_index in range(number_of_simulations):
 
-    print(simulation_index)
     # The factorial design runs through each row of Yates array and translates
     # the value at each index to a corresponding parameter value in
     # design_variable_arr
