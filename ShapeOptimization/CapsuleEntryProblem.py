@@ -57,7 +57,6 @@ class ShapeOptimizationProblem:
 
     def __init__(self,
                  bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                 integrator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings,
                  termination_settings,
                  capsule_density: float,
                  simulation_start_epoch: float,
@@ -80,7 +79,6 @@ class ShapeOptimizationProblem:
         """
         # Set arguments as attributes
         self.bodies_function = lambda : bodies
-        self.integrator_settings_function = lambda : integrator_settings
         self.termination_settings_function = lambda : termination_settings
         self.capsule_density = capsule_density
         self.simulation_start_epoch = simulation_start_epoch
@@ -157,14 +155,13 @@ class ShapeOptimizationProblem:
             Fitness value (for optimization, see assignment 3).
         """
         bodies = self.bodies_function()
-        integrator_settings = self.integrator_settings_function()
 
         # Delete existing capsule
         bodies.remove_body('Capsule')
         # Create new capsule with a new coefficient interface based on the current parameters, add it to the body system
         Util.add_capsule_to_body_system(bodies,
-                                   shape_parameters,
-                                   self.capsule_density)
+                                        shape_parameters,
+                                        self.capsule_density)
 
 
         # Create propagator settings for benchmark (Cowell)
@@ -176,12 +173,13 @@ class ShapeOptimizationProblem:
                                                            termination_settings,
                                                            dependent_variables_to_save)
 
+        propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+            2.0, propagation_setup.integrator.CoefficientSets.rkdp_87)
+
         # Create simulation object and propagate dynamics
-        dynamics_simulator = numerical_simulation.SingleArcSimulator(
+        dynamics_simulator = numerical_simulation.create_dynamics_simulator(
             bodies,
-            integrator_settings,
-            propagator_settings,
-            print_dependent_variable_data = False)
+            propagator_settings )
 
         self.dynamics_simulator_function = lambda: dynamics_simulator
 

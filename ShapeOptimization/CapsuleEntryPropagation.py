@@ -103,6 +103,10 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+
+import sys
+sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+
 # General imports
 import numpy as np
 import os
@@ -184,10 +188,6 @@ Util.add_capsule_to_body_system(bodies,
 termination_settings = Util.get_termination_settings(simulation_start_epoch,
                                                      maximum_duration,
                                                      termination_altitude)
-# Retrieve dependent variables to save
-dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-# Check whether there are any
-are_dependent_variables_to_save = False if not dependent_variables_to_save else True
 
 ################################
 ### DESIGN SPACE EXPLORATION ###
@@ -263,16 +263,12 @@ for simulation_index in range(number_of_simulations):
 
     parameters[simulation_index] = shape_parameters.copy()
 
-    # Create integrator settings
-    integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
-
     # Problem class is created
     current_capsule_entry_problem = ShapeOptimizationProblem(bodies,
-                                                     integrator_settings,
                                                      termination_settings,
                                                      capsule_density,
                                                      simulation_start_epoch,
-                                                     decision_variable_range) #this may create problem
+                                                     decision_variable_range)
 
 
     # NOTE: Propagator settings, termination settings, and initial_propagation_time are defined in the fitness function

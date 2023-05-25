@@ -23,7 +23,6 @@ This module defines useful functions that will be called by the main script, whe
 
 # General imports
 import numpy as np
-from itertools import combinations as comb
 
 # Tudatpy imports
 import tudatpy
@@ -109,116 +108,64 @@ def get_dependent_variable_save_settings() -> list:
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.relative_distance('Vehicle', 'Earth'),
                                    propagation_setup.dependent_variable.relative_distance('Vehicle', 'Sun'),
-                                   propagation_setup.dependent_variable.relative_distance('Vehicle', 'Mars')]
+                                   propagation_setup.dependent_variable.relative_distance('Vehicle', 'Mars'),
+                                   propagation_setup.dependent_variable.single_acceleration_norm(
+                                       propagation_setup.acceleration.thrust_acceleration_type,'Vehicle','Vehicle')]
     return dependent_variables_to_save
 
-
-# NOTE TO STUDENTS: THIS FUNCTION SHOULD BE EXTENDED TO USE MORE INTEGRATORS FOR ASSIGNMENT 1.
-def get_integrator_settings(propagator_index: int,
-                            integrator_index: int,
-                            settings_index: int,
-                            simulation_start_epoch: float) \
-        -> tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
-    """
-
-    Retrieves the integrator settings.
-
-    It selects a combination of integrator to be used (first argument) and
-    the related setting (tolerance for variable step size integrators
-    or step size for fixed step size integrators). The code, as provided, runs the following:
-    - if j=0,1,2,3: a variable-step-size, multi-stage integrator is used (see multiStageTypes list for specific type),
-                     with tolerances 10^(-10+*k)
-    - if j=4      : a fixed-step-size RK4 integrator is used, with step-size 7200*2^(k)
-
-    Parameters
-    ----------
-    propagator_index : int
-        Index that selects the propagator type (currently not used).
-        NOTE TO STUDENTS: this argument can be used to select specific combinations of propagator and integrators
-        (provided that the code is expanded).
-    integrator_index : int
-        Index that selects the integrator type as follows:
-            0 -> RK4(5)
-            1 -> RK5(6)
-            2 -> RK7(8)
-            3 -> RKDP7(8)
-            4 -> RK4
-    settings_index : int
-        Index that selects the tolerance or the step size
-        (depending on the integrator type).
-    simulation_start_epoch : float
-        Start of the simulation [s] with t=0 at J2000.
-
-    Returns
-    -------
-    integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
-        Integrator settings to be provided to the dynamics simulator.
-
-    """
-    # Define list of multi-stage integrators
-    multi_stage_integrators = [propagation_setup.integrator.RKCoefficientSets.rkf_45,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_56,
-                               propagation_setup.integrator.RKCoefficientSets.rkf_78,
-                               propagation_setup.integrator.RKCoefficientSets.rkdp_87]
-
-    # Use variable step-size integrator
-    if integrator_index < 4:
-        # Select variable-step integrator
-        current_coefficient_set = multi_stage_integrators[integrator_index]
-        # Compute current tolerance
-        current_tolerance = 10.0 ** (-10.0 + settings_index)
-        # Create integrator settings
-        integrator = propagation_setup.integrator
-        # Here (epsilon, inf) are set as respectively min and max step sizes
-        # also note that the relative and absolute tolerances are the same value
-        integrator_settings = integrator.runge_kutta_variable_step_size(simulation_start_epoch,
-                                                                        1.0,
-                                                                        current_coefficient_set,
-                                                                        np.finfo(float).eps,
-                                                                        np.inf,
-                                                                        current_tolerance,
-                                                                        current_tolerance)
-    # Use fixed step-size integrator
-    else:
-        # Compute time step
-        fixed_step_size = 7200.0 * 2.0 ** settings_index
-        # Create integrator settings
-        integrator = propagation_setup.integrator
-        integrator_settings = integrator.runge_kutta_4(simulation_start_epoch,
-                                                       fixed_step_size)
-    return integrator_settings
 
 def get_propagator_settings( trajectory_parameters,
                              bodies,
                              initial_propagation_time,
-                             constant_specific_impulse,
                              vehicle_initial_mass,
                              termination_settings,
-                             dependent_variables_to_save,
-                             current_propagator = propagation_setup.propagator.cowell,
-                             model_choice = 0 ):
+                             dependent_variables_to_save ):
+    """
+    Creates the propagator settings.
+
+    This function creates the propagator settings for translational motion and mass, for the given simulation settings
+    Note that, in this function, the thrust_parameters are used to update the engine model and rotation model of the
+    vehicle. The propagator settings that are returned as output of this function are not yet usable: they do not
+    contain any integrator settings, which should be set at a later point by the user
+
+    Parameters
+    ----------
+    trajectory_parameters : list[ float ]
+        List of free parameters for the low-thrust model, which will be used to update the vehicle properties such that
+        the new thrust/magnitude direction are used. The meaning of the parameters in this list is stated at the
+        start of the *Propagation.py file
+    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+        System of bodies present in the simulation.
+    initial_propagation_time : float
+        Start of the simulation [s] with t=0 at J2000.
+    vehicle_initial_mass : float
+        Mass of the vehicle to be used at the initial time
+    termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
+        Propagation termination settings object to be used
+    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
+        List of dependent variables to save.
+    current_propagator : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalPropagatorType
+        Type of propagator to be used for translational dynamics
+
+    Returns
+    -------
+    propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.MultiTypePropagatorSettings
+        Propagator settings to be provided to the dynamics simulator.
+    """
+
     # Define bodies that are propagated and their central bodies of propagation
     bodies_to_propagate = ['Vehicle']
     central_bodies = ['Sun']
-    # Retrieve thrust acceleration
-    thrust_settings = get_hodograph_thrust_acceleration_settings(trajectory_parameters,
-                                                                 bodies,
-                                                                 constant_specific_impulse)
-    # Define accelerations acting
-    # Define accelerations acting on vehicle in nominal case
+    # Update vehicle rotation model and thrust magnitude model
+    transfer_trajectory = set_hodograph_thrust_model(trajectory_parameters, bodies)
+    # Define accelerations acting on capsule
     acceleration_settings_on_vehicle = {
         'Sun': [propagation_setup.acceleration.point_mass_gravity()],
-        'Vehicle': [thrust_settings],
+        'Vehicle': [propagation_setup.acceleration.thrust_from_engine('LowThrustEngine')],
         'Mars': [propagation_setup.acceleration.point_mass_gravity()],
         'Earth': [propagation_setup.acceleration.point_mass_gravity()]
     }
-    # Here model settings are modified
-    if model_choice == 1:
-        del acceleration_settings_on_vehicle['Mars']
-    elif model_choice == 2:
-        del acceleration_settings_on_vehicle['Earth']
-    elif model_choice > 2:
-        acceleration_settings_on_vehicle['Jupiter'] = [propagation_setup.acceleration.point_mass_gravity()]
+
     # Create global accelerations dictionary
     acceleration_settings = {'Vehicle': acceleration_settings_on_vehicle}
     acceleration_models = propagation_setup.create_acceleration_models(
@@ -228,18 +175,18 @@ def get_propagator_settings( trajectory_parameters,
         central_bodies)
 
     # Retrieve initial state
-    initial_state = get_hodograph_state_at_epoch(trajectory_parameters,
-                                                 bodies,
-                                                 initial_propagation_time)
+    initial_state = transfer_trajectory.legs[ 0 ].state_along_trajectory( initial_propagation_time )
 
-    # Create propagation settings for the benchmark
+    # Create propagation settings for the translational dynamics
     translational_propagator_settings = propagation_setup.propagator.translational(
         central_bodies,
         acceleration_models,
         bodies_to_propagate,
         initial_state,
+        initial_propagation_time,
+        None,
         termination_settings,
-        current_propagator,
+        propagation_setup.propagator.cowell,
         output_variables=dependent_variables_to_save)
 
     # Create mass rate model
@@ -247,18 +194,23 @@ def get_propagator_settings( trajectory_parameters,
     mass_rate_models = propagation_setup.create_mass_rate_models(bodies,
                                                                  mass_rate_settings_on_vehicle,
                                                                  acceleration_models)
-    # Create mass propagator settings (same for all propagations)
+    # Create mass propagator settings
     mass_propagator_settings = propagation_setup.propagator.mass(bodies_to_propagate,
                                                                  mass_rate_models,
                                                                  np.array([vehicle_initial_mass]),
+                                                                 initial_propagation_time,
+                                                                 None,
                                                                  termination_settings)
 
     # Create multi-type propagation settings list
     propagator_settings_list = [translational_propagator_settings,
                                 mass_propagator_settings]
 
-    # Create multi-type propagation settings object
+    # Create multi-type propagation settings object for translational dynamics and mass.
+    # NOTE: these are not yet 'valid', as no integrator settings are defined yet
     propagator_settings = propagation_setup.propagator.multitype(propagator_settings_list,
+                                                                 None,
+                                                                 initial_propagation_time,
                                                                  termination_settings,
                                                                  dependent_variables_to_save)
 
@@ -307,6 +259,32 @@ def get_trajectory_initial_time(trajectory_parameters: list,
     """
     return trajectory_parameters[0] * constants.JULIAN_DAY + buffer_time
 
+def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
+                               output_path: str ):
+    """
+    It computes the analytical hodographic trajectory and saves the results to a file
+    This function analytically calculates the hodographic trajectory from the Hodographic Shaping object.
+    * hodographic_trajectory.dat: Cartesian states of semi-analytical trajectory;
+    Parameters
+    ----------
+    shaping_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
+        TransferTrajectory object with a single leg: the hodographic shaping leg from Earth to Mars
+    output_path : str (default: None)
+        If and where to save the benchmark results (if None, results are NOT written).
+    Returns
+    -------
+    none
+    """
+
+    # Set number of data points
+    number_of_data_points = 10000
+
+    # Extract trajectory shape
+    trajectory_shape = shaping_object.states_along_trajectory(number_of_data_points)
+    # If desired, save results to files
+    save2txt(trajectory_shape,
+                 'hodographic_trajectory.dat',
+                 output_path)
 
 def get_trajectory_final_time(trajectory_parameters: list,
                               buffer_time: float = 0.0) -> float:
@@ -328,69 +306,6 @@ def get_trajectory_final_time(trajectory_parameters: list,
     # Get initial time
     initial_time = get_trajectory_initial_time(trajectory_parameters)
     return initial_time + get_trajectory_time_of_flight(trajectory_parameters) - buffer_time
-
-
-def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping,
-                               trajectory_parameters: list,
-                               specific_impulse: float,
-                               output_path: str = None):
-    """
-    It computes the analytical hodographic trajectory and saves the results to a file, if desired.
-
-    This function analytically calculates the hodographic trajectory from the Hodographic Shaping object. It
-    retrieves both the trajectory and the acceleration profile; if desired, both are saved to files as follows:
-
-    * hodographic_trajectory.dat: Cartesian states of semi-analytical trajectory;
-    * hodographic_thrust_acceleration.dat: Thrust acceleration in inertial, Cartesian, coordinates, along the
-    semi-analytical trajectory.
-
-    NOTE: The independent variable (first column) does not represent the usual time (seconds since J2000), but instead
-    denotes the time since departure.
-
-    Parameters
-    ----------
-    shaping_object: tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping
-        Hodographic shaping object.
-    trajectory_parameters : list of floats
-        List of trajectory parameters to be optimized.
-    specific_impulse : float
-        Constant specific impulse of the spacecraft.
-    output_path : str (default: None)
-        If and where to save the benchmark results (if None, results are NOT written).
-
-    Returns
-    -------
-    none
-    """
-    # Set time parameters
-    start_time = 0.0
-    final_time = get_trajectory_time_of_flight(trajectory_parameters)
-    # Set number of data points
-    number_of_data_points = 10000
-    # Compute step size
-    step_size = (final_time - start_time) / (number_of_data_points - 1)
-    # Create epochs vector
-    epochs = np.linspace(start_time,
-                         final_time,
-                         number_of_data_points)
-    # Create specific impulse lambda function
-    specific_impulse_function = lambda t: specific_impulse
-    # Retrieve thrust acceleration profile from shaping object
-    # NOTE TO THE STUDENTS: do not uncomment
-    # thrust_acceleration_profile = shaping_object.get_thrust_acceleration_profile(
-    #     epochs,
-    #     specific_impulse_function)
-    # Retrieve trajectory from shaping object
-    trajectory_shape = shaping_object.get_trajectory(epochs)
-    # If desired, save results to files
-    if output_path is not None:
-        # NOTE TO THE STUDENTS: do not uncomment
-        # save2txt(thrust_acceleration_profile,
-        #          'hodographic_thrust_acceleration.dat',
-        #          output_path)
-        save2txt(trajectory_shape,
-                 'hodographic_trajectory.dat',
-                 output_path)
 
 
 def get_radial_velocity_shaping_functions(trajectory_parameters: list,
@@ -492,7 +407,7 @@ def get_axial_velocity_shaping_functions(trajectory_parameters: list,
 
     Parameters
     ----------
-    trajectory_parameters : list
+    trajectory_parameters : list[ float ]
         List of trajectory parameters to optimize.
     frequency: float
         Frequency of the highest-order methods.
@@ -528,9 +443,9 @@ def get_axial_velocity_shaping_functions(trajectory_parameters: list,
             free_coefficients)
 
 
-def create_hodographic_shaping_object(trajectory_parameters: list,
-                                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
-        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
+def create_hodographic_trajectory(trajectory_parameters: list,
+                                  bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) \
+        -> tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory:
     """
     It creates and returns the hodographic shaping object, based on the trajectory parameters.
 
@@ -547,9 +462,7 @@ def create_hodographic_shaping_object(trajectory_parameters: list,
         Hodographic shaping object.
     """
     # Time settings
-    initial_time = get_trajectory_initial_time(trajectory_parameters)
     time_of_flight = get_trajectory_time_of_flight(trajectory_parameters)
-    final_time = get_trajectory_final_time(trajectory_parameters)
     # Number of revolutions
     number_of_revolutions = int(trajectory_parameters[2])
     # Compute relevant frequency and scale factor for shaping functions
@@ -574,88 +487,61 @@ def create_hodographic_shaping_object(trajectory_parameters: list,
         scale_factor,
         time_of_flight,
         number_of_revolutions)
-    # Retrieve boundary conditions and central body gravitational parameter
-    initial_state = bodies.get_body('Earth').state_in_base_frame_from_ephemeris(initial_time)
-    final_state = bodies.get_body('Mars').state_in_base_frame_from_ephemeris(final_time)
-    gravitational_parameter = bodies.get_body('Sun').gravitational_parameter
-    # Create and return shape-based method
-    hodographic_shaping_object = shape_based_thrust.HodographicShaping(initial_state,
-                                                                       final_state,
-                                                                       time_of_flight,
-                                                                       gravitational_parameter,
-                                                                       number_of_revolutions,
-                                                                       radial_velocity_shaping_functions,
-                                                                       normal_velocity_shaping_functions,
-                                                                       axial_velocity_shaping_functions,
-                                                                       radial_free_coefficients,
-                                                                       normal_free_coefficients,
-                                                                       axial_free_coefficients)
-    return hodographic_shaping_object
+
+    # Create settings for transfer trajectory (zero excess velocity on departure and arrival)
+    hodographic_leg_settings = transfer_trajectory.hodographic_shaping_leg(
+        radial_velocity_shaping_functions,
+        normal_velocity_shaping_functions,
+        axial_velocity_shaping_functions )
+    node_settings = list()
+    node_settings.append( transfer_trajectory.departure_node( 1.0E8, 0.0 ) )
+    node_settings.append( transfer_trajectory.capture_node( 1.0E8, 0.0 ) )
+
+    # Create and return transfer trajectory
+    trajectory_object = transfer_trajectory.create_transfer_trajectory(
+        bodies, [hodographic_leg_settings], node_settings, ['Earth','Mars'],'Sun' )
+
+    # Extract node times
+    node_times = list( )
+    node_times.append( get_trajectory_initial_time( trajectory_parameters ) )
+    node_times.append( get_trajectory_final_time( trajectory_parameters ) )
+
+    #transfer_trajectory.print_parameter_definitions( [hodographic_leg_settings], node_settings )
+    hodograph_free_parameters = trajectory_parameters[2:9]
+
+    # Depart and arrive with 0 excess velocity
+    node_parameters = list()
+    node_parameters.append( np.zeros([3,1]))
+    node_parameters.append( np.zeros([3,1]))
+
+    # Update trajectory to given times, node settings, and hodograph parameters
+    trajectory_object.evaluate( node_times, [hodograph_free_parameters], node_parameters )
+    return trajectory_object
 
 
-def get_hodograph_thrust_acceleration_settings(trajectory_parameters: list,
-                                               bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                               specific_impulse: float) \
-        -> tudatpy.kernel.trajectory_design.shape_based_thrust.HodographicShaping:
+def set_hodograph_thrust_model(trajectory_parameters: list,
+                               bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies):
     """
     It extracts the acceleration settings resulting from the hodographic trajectory and returns the equivalent thrust
-    acceleration settings object.
+    acceleration settings object. In addition, it returns teh transfer trajectory object for later use in the code
 
     Parameters
     ----------
-    trajectory_parameters : list
-        List of trajectory parameters to be optimized.
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
-        System of bodies present in the simulation.
-    specific_impulse : float
-        Constant specific impulse of the spacecraft.
-
-    Returns
-    -------
-    tudatpy.kernel.numerical_simulation.propagation_setup.acceleration.ThrustAccelerationSettings
-        Thrust acceleration settings object.
-    """
-    # Create shaping object
-    shaping_object = create_hodographic_shaping_object(trajectory_parameters,
-                                                       bodies)
-    # Compute offset, which is the time since J2000 (when t=0 for tudat) at which the simulation starts
-    # N.B.: this is different from time_buffer, which is the delay between the start of the hodographic
-    # trajectory and the beginning of the simulation
-    time_offset = get_trajectory_initial_time(trajectory_parameters)
-    # Create specific impulse lambda function
-    specific_impulse_function = lambda t: specific_impulse
-    # Return acceleration settings
-    return transfer_trajectory.get_low_thrust_acceleration_settings(shaping_object,
-                                                                    bodies,
-                                                                    'Vehicle',
-                                                                    specific_impulse_function,
-                                                                    time_offset)
-
-
-def get_hodograph_state_at_epoch(trajectory_parameters: list,
-                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                                 epoch: float) -> np.ndarray:
-    """
-    It retrieves the Cartesian state, expressed in the inertial frame, at a given epoch of the analytical trajectory.
-
-    Parameters
-    ----------
-    trajectory_parameters : list
+    trajectory_parameters : list[float]
         List of trajectory parameters to be optimized.
     bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
 
     Returns
     -------
-    np.ndarray
-        Cartesian state in the inertial frame of the spacecraft at the given epoch.
+    None
     """
     # Create shaping object
-    shaping_object = create_hodographic_shaping_object(trajectory_parameters,
-                                                       bodies)
-    # Define current hodograph time
-    hodograph_time = epoch - get_trajectory_initial_time(trajectory_parameters)
-    return shaping_object.get_state(hodograph_time)
+    trajectory_object = create_hodographic_trajectory(trajectory_parameters, bodies)
+    transfer_trajectory.set_low_thrust_acceleration( trajectory_object.legs[ 0 ], bodies, 'Vehicle', 'LowThrustEngine' )
+
+    # Return trajectory object
+    return trajectory_object
 
 ###########################################################################
 # BENCHMARK UTILITIES #####################################################
@@ -715,35 +601,33 @@ def generate_benchmarks(benchmark_step_size: float,
     # Create integrator settings for the first benchmark, using a fixed step size RKDP8(7) integrator
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
     benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
         first_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
+        propagation_setup.integrator.CoefficientSets.rkdp_87,
         first_benchmark_step_size,
         first_benchmark_step_size,
         np.inf,
         np.inf)
+    benchmark_propagator_settings.integrator_settings = benchmark_integrator_settings
 
     print('Running first benchmark...')
-    first_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    first_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=True)
+        benchmark_propagator_settings )
 
     # Create integrator settings for the second benchmark in the same way
     benchmark_integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size(
-        simulation_start_epoch,
         second_benchmark_step_size,
-        propagation_setup.integrator.RKCoefficientSets.rkdp_87,
+        propagation_setup.integrator.CoefficientSets.rkdp_87,
         second_benchmark_step_size,
         second_benchmark_step_size,
         np.inf,
         np.inf)
+    benchmark_propagator_settings.integrator_settings = benchmark_integrator_settings
 
     print('Running second benchmark...')
-    second_dynamics_simulator = numerical_simulation.SingleArcSimulator(
+    second_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
-        benchmark_integrator_settings,
-        benchmark_propagator_settings, print_dependent_variable_data=False)
+        benchmark_propagator_settings )
 
     ### WRITE BENCHMARK RESULTS TO FILE ###
     # Retrieve state history
@@ -817,7 +701,6 @@ def compare_benchmarks(first_benchmark: dict,
     # Return the interpolator
     return benchmark_difference
 
-
 def compare_models(first_model: dict,
                    second_model: dict,
                    interpolation_epochs: np.ndarray,
@@ -863,425 +746,3 @@ def compare_models(first_model: dict,
                  output_path)
     # Return the model difference
     return model_difference
-
-##########################################
-### Design Space Exploration Functions ###
-##########################################
-
-def orth_arrays(nfact : int, nlevels : int) -> tuple((np.array, int)):
-    """ 
-    Erwin's Matlab Steps:
-    Create ortogonal arrays from Latin Square in 4 successive steps:
-    
-    0) Take the column from the smaller array to create 2 new
-       columns and 2x new rows,
-    1) block 1 (1/2 rows): take old values 2x for new columns,
-    2) block 2 (1/2 rows): take old values, use Latin-Square for new
-       columns,
-    3) column 1: divide experiments into groups of 1,2.
-    """
-
-    ierror = 0
-    icount = 0
-    # Simple lambda functions to create size of orthogonal array
-    row_number = lambda icount, nlevels : nlevels**(icount+1)
-    col_number = lambda row_number : row_number-1
-
-    ###################################
-    ### If 2 Level orthogonal array ###
-    ###################################
-
-    #Determining the number of rows
-    if nlevels == 2:
-        if nfact >= 2 and nfact <= 3:
-                icount = 1
-        elif nfact >= 4 and nfact <= 7:
-                icount = 2
-        elif nfact >= 8 and nfact <= 15:
-                icount = 3
-        elif nfact >= 16 and nfact <= 31:
-                icount = 4
-        elif nfact >= 32 and nfact <= 63:
-                icount = 5
-        elif nfact >= 64 and nfact <= 127:
-                icount = 6
-        elif nfact >= 128 and nfact <= 255:
-                icount = 7
-        else:
-                ierror = 1
-                Lx = np.zeros(1)
-                return Lx, ierror
-
-        Lxrow = row_number(icount, nlevels)
-        Lxcol = col_number(Lxrow)
-        Lx = np.zeros((Lxrow,Lxcol))
-        iaux = Lx.copy()
-        
-        ### Define the 2-level Latin Square ###
-        LS = np.zeros((2,2))
-        LS[0,0] = -1
-        LS[0,1] =  1
-        LS[1,0] =  1
-        LS[1,1] = -1
-        # Other relevant lists for filling in the 2-level array
-        index_list = [0, 1]
-        two_level = [-1, 1]
-        
-        # In case of only one factor, copy the first Latin Square and leave the subroutine.
-        if icount == 0:
-                Lx[0,0] = LS[0,1]
-                Lx[1,0] = LS[0,1]
-                return Lx, ierror
-        
-        iaux[0,0] = -1
-        iaux[1,0] =  1
-        irow = 2
-        icol = 1
-
-        # Some weirdness is required here because the original algorithm in Matlab starts from index 1
-        Lx = np.hstack((np.zeros((len(Lx), 1)), Lx))
-        Lx = np.vstack((np.zeros((1, len(Lx[0,:]))), Lx))
-        iaux = np.hstack((np.zeros((len(iaux), 1)), iaux))
-        iaux = np.vstack((np.zeros((1, len(iaux[0,:]))), iaux))
-        
-        ### Fill in orthogonal array ###
-        for i1 in range(1, icount + 1):
-                for i2 in range(1, irow + 1):
-                        for i3 in range(1, icol + 1):
-                                for p in range(2):
-                                        for q in range(2):
-                                                for r in range(2):
-                                                        #Block 1.
-                                                        if iaux[i2,i3] == two_level[q] and p == 0:
-                                                                Lx[i2,i3*2 + index_list[r]] = two_level[q] 
-                                                        #Block 2
-                                                        if iaux[i2,i3] == two_level[q] and p == 1:
-                                                                Lx[i2 + irow,i3*2 + index_list[r]] = LS[index_list[q], index_list[r]]
-                                        Lx[i2 + irow*p,1] = two_level[p]
-
-                if i1 == icount:
-                        # Deleting extra row from Matlab artifact
-                        Lx = np.delete(Lx, 0, 0)
-                        Lx = np.delete(Lx, 0, 1)
-                        return Lx, ierror
-                irow = 2*irow
-                icol = 2*icol+1
-                for i2 in range(1, irow + 1):
-                        for i3 in range(1, icol + 1):
-                                iaux[i2,i3] = Lx[i2,i3]
-
-    ###################################
-    ### If 3 Level orthogonal array ###
-    ###################################
-
-    #Determining the number of rows
-    elif nlevels == 3:
-        if nfact >= 2 and nfact <= 4:
-                icount = 1
-        elif nfact >= 5 and nfact <= 13:
-                icount = 2
-        elif nfact >= 14 and nfact <= 40:
-                icount = 3
-        elif nfact >= 41 and nfact <= 121:
-                icount = 4
-        else:
-                ierror = 1
-                Lx = np.zeros(1)
-                return Lx, ierror
-
-        Lxrow = row_number(icount, nlevels)
-        Lxcol = col_number(Lxrow) // 2
-        Lx = np.zeros((Lxrow,Lxcol))
-        iaux = Lx.copy()
-        
-        # Relevant lists for filling in the 3-level array
-        index_list = [0, 1, 2]
-        three_level = [-1, 0, 1]
-        ### Define the two three-level Latin Squares. Latin Square 1 ###
-        LS1 = np.zeros((3,3))
-        for i in range(3):
-                for j in range(3):
-                                LS1[i,index_list[j]] = three_level[(j+i)%3];
-        ### ... and Latin Square 2. ###
-        LS2 = np.zeros((3,3))
-        three_level_2 = [-1, 1, 0]
-        for i in range(3):
-                for j in range(3):
-                        LS2[i, index_list[j]] = three_level_2[j-i]
-         
-        ### In case of only one factor, copy the first Latin Square and leave the subroutine. ###
-        if icount == 0:
-           Lx[0,0] = LS1[0,0];
-           Lx[1,0] = LS1[0,1];
-           Lx[2,0] = LS1[0,2];
-           return Lx, ierror
-
-        ### Define iaux for loops ###
-        iaux[0,0] = -1
-        iaux[1,0] = 0
-        iaux[2,0] =  1
-        irow = 3
-        icol = 1
-
-        # Some weirdness is required here because the original algorithm in Matlab starts from index 1
-        Lx = np.hstack((np.zeros((len(Lx), 1)), Lx))
-        Lx = np.vstack((np.zeros((1, len(Lx[0,:]))), Lx))
-        iaux = np.hstack((np.zeros((len(iaux), 1)), iaux))
-        iaux = np.vstack((np.zeros((1, len(iaux[0,:]))), iaux))
-        
-        ### Filling in orthogonal array ###
-        for i1 in range(1, icount + 1):
-                for i2 in range(1, irow + 1):
-                        for i3 in range(1, icol + 1):
-                                for p in range(3):
-                                        for q in range(3):
-                                                for r in range(3):
-                                                        #Block 1.
-                                                        if iaux[i2,i3] == three_level[q] and p == 0:
-                                                                Lx[i2 + irow*p,i3*3 + three_level[r]] = three_level[q] 
-                                                        #Block 2.
-                                                        if iaux[i2,i3] == three_level[q] and p == 1:
-                                                                Lx[i2 + irow*p,i3*3 + three_level[r]] = LS1[index_list[q], index_list[r]]
-                                                        #Block 3.
-                                                        if iaux[i2,i3] == three_level[q] and p == 2:
-                                                                Lx[i2 + irow*p,i3*3 + three_level[r]] = LS2[index_list[q], index_list[r]]
-                                        Lx[i2 + irow*p,1] = three_level[p]
-
-                if i1 == icount:
-                        # Deleting extra row from Matlab artifact
-                        Lx = np.delete(Lx, 0, 0)
-                        Lx = np.delete(Lx, 0, 1)
-                        return Lx, ierror
-                irow = 3*irow
-                icol = 3*icol+1
-                for i2 in range(1, irow + 1):
-                        for i3 in range(1, icol + 1):
-                                iaux[i2,i3] = Lx[i2,i3]
-    else:
-        print('These levels are not implemented yet. (You may wonder whether you need them)')
-
-
-
-def yates_array(no_of_levels : int, no_of_factors : int) -> np.array:
-    """
-    Function that creates a yates array according to yates algorithm
-
-    Sources: 
-    https://www.itl.nist.gov/div898/handbook/eda/section3/eda35i.htm 
-    https://en.wikipedia.org/wiki/Yates_analysis
-
-    no_of_levels : The number of levels a factor can attain
-
-    no_of_factors : The number of design variables in the problem
-
-    """
-
-    # The values that can be entered into yates array, depends on the no_of_levels
-    levels = []
-    for i in range(no_of_levels+1):
-        levels.append(i)
-
-    n_rows = no_of_levels**no_of_factors
-    n_cols = no_of_factors
-    yates_array = np.zeros((n_rows, n_cols), dtype='int')
-
-    row_seg = n_rows
-    for col in range(n_cols):
-        repetition_amount = no_of_levels**col # Number of times to repeat the row segment to fill the array
-        row_seg = row_seg // no_of_levels # Get row segment divided by number of levels
-        for j in range(repetition_amount):
-            for i in range(no_of_levels): 
-                # The values are entered from position i to position i + no_of_levels
-                yates_array[(i*row_seg + j*row_seg*no_of_levels):((i+1)*row_seg + j*row_seg*no_of_levels), col] = levels[i] 
-    return yates_array
-
-
-def yates_array_v2(no_of_levels: int, no_of_factors: int) -> np.array:
-    """
-    Function that creates a yates array according to yates algorithm
-
-    no_of_levels : The number of levels a factor can attain
-
-    no_of_factors : The number of design variables in the problem
-
-    Return : np.array (no_of_levels**no_of_factors, no_of_factors)
-
-    """
-    if no_of_levels == 2:
-        levels = [-1, 1]
-    #    elif no_of_levels == 3:
-    #        levels = [-1, 0, 1]
-    #    elif no_of_levels == 4:
-    #        levels = [-2, -1, 1, 2]
-    #    elif no_of_levels == 5:
-    #        levels = [-2, -1, 0, 1, 2]
-    #    elif no_of_levels == 6:
-    #        levels = [-3, -2, -1, 1, 2, 3]
-    #    elif no_of_levels == 7:
-    #        levels = [-3, -2, -1, 0, 1, 2, 3]
-    #    elif no_of_levels == 8:
-    #        levels = [-4, -3, -2, -1, 1, 2, 3, 4]
-    # levels = []
-    # for i in range(no_of_levels+1):
-    #    levels.append(i)
-
-    n_rows = no_of_levels ** no_of_factors
-    n_cols = no_of_factors
-    yates_array = np.zeros((n_rows, n_cols), dtype='int')
-
-    row_seg = n_rows
-    for col in range(n_cols):
-        repetition_amount = no_of_levels ** col  # Number of times to repeat the row segment to fill the array
-        row_seg = row_seg // no_of_levels  # Get row segment divided by number of levels
-        for j in range(repetition_amount):
-            for it, level in enumerate(levels):
-                # fill in from position i to position i + no_of_levels
-                yates_array[(it * row_seg + j * row_seg * no_of_levels):((it + 1) * row_seg +
-                                                                         j * row_seg * no_of_levels), col] = levels[it]
-    return yates_array
-
-
-def anova_analysis(objective_values,
-                   factorial_design_array: np.array,
-                   no_of_factors=4,
-                   no_of_levels=2,
-                   level_of_interactions=2):
-    """
-    Function that performs an ANOVA for 2 levels and n factors. After some definitions, we iterate
-    through yates array, depending on the value being -1 or 1, we add the occurrence to a certain
-    container. Later the amount of items in the container determines the contribution of that
-    specific variable to an objective value. This iteration is done for individual, linear, and
-    quadratic effects, thereby determing the contribution of all interactions.
-
-    objective_values : list of objective function values following from the factorial design array
-
-    factorial_design_array : np.array from yates_array_v2 function
-
-    level_of_interactions : Integer either 2 or 3, depending on what interactions you want to
-    include
-
-    Return : This analysis returns the contributions of all parameters/interactions to the
-    specified objective. Specifically, it returns 4 elements: Pi, Pij, Pijk, and Pe. These are lists
-    that contain percentage contributions to the objective. Pi are the individual parameters, Pij
-    are linear interactions, and Pijk are the quadratic interactions. Pe are errors.
-
-    """
-
-    assert len(objective_values) == len(factorial_design_array)  # Quick check for validity of data
-
-    number_of_simulations = no_of_levels ** no_of_factors
-
-    #########################
-    ### Array definitions ###
-    #########################
-
-    # Lambda function to determine number of interaction columns
-    interactions = lambda iterable, k: [i for i in comb(range(iterable), k)]
-    no_of_interactions_2 = interactions(no_of_factors, 2)  # number of 2-level interactions
-    no_of_interactions_3 = interactions(no_of_factors, 3)  # number of 3-level interactions
-
-    # Arrays for individual, 2, and 3 level interactions - sum of squares
-    sum_of_squares_i = np.zeros(no_of_factors)
-    sum_of_squares_ij = np.zeros(len(no_of_interactions_2))
-    sum_of_squares_ijk = np.zeros(len(no_of_interactions_3))
-
-    # Arrays for individual, 2, and 3 level interactions - percentage contribution
-    percentage_contribution_i = np.zeros(no_of_factors)
-    percentage_contribution_ij = np.zeros(len(no_of_interactions_2))
-    percentage_contribution_ijk = np.zeros(len(no_of_interactions_3))
-
-    # Sum of objective values and mean of parameters
-    sum_of_objective = np.sum(objective_values)
-    mean_of_param = sum_of_objective / number_of_simulations
-
-    # Variance and standard deviation of data
-    variance_per_run = np.zeros(number_of_simulations)
-    objective_values_squared = np.zeros(number_of_simulations)
-    for i in range(len(factorial_design_array)):
-        variance_per_run[i] = (objective_values[i] - mean_of_param) ** 2 / (number_of_simulations - 1)
-        objective_values_squared[i] = objective_values[i] ** 2
-    variance = np.sum(variance_per_run)
-    standard_deviation = np.sqrt(variance)
-
-    # Square of sums
-    CF = sum_of_objective * mean_of_param
-    # Difference square of sums and sum of squares
-    sum_of_deviation = np.sum(objective_values_squared) - CF
-
-    #####################################
-    ### Iterations through yates array ###
-    #####################################
-
-    ### Linear effects ###
-    # Container for appearance of minimum/maximum value
-    Saux = np.zeros((no_of_factors, no_of_levels))
-    number_of_appearanes = number_of_simulations / no_of_levels
-    for j in range(number_of_simulations):
-        for i in range(no_of_factors):
-            if factorial_design_array[j, i] == -1:
-                Saux[i, 0] += objective_values[j]
-            else:
-                Saux[i, 1] += objective_values[j]
-
-    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
-        for i in range(no_of_factors):
-            sum_of_squares_i[i] = (1 / 2) * (Saux[i, 1] - Saux[i, 0]) ** 2 / number_of_appearanes
-            percentage_contribution_i[i] = 100 * sum_of_squares_i[i] / sum_of_deviation
-
-    ### 2-level interaction ###
-    # Container for appearance of minimum/maximum value
-    Saux = np.zeros((len(no_of_interactions_2), no_of_levels))
-    for j in range(number_of_simulations):
-        for i in range(len(no_of_interactions_2)):
-            # Interaction sequence of all possible 2-level interactions is created by multiplying the
-            # two respective elements from yates array
-            interaction = factorial_design_array[j, no_of_interactions_2[i][0]] * \
-                          factorial_design_array[j, no_of_interactions_2[i][1]]
-            if interaction == -1:
-                Saux[i, 0] += objective_values[j]
-            else:
-                Saux[i, 1] += objective_values[j]
-
-    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
-        for i in range(len(no_of_interactions_2)):
-            sum_of_squares_ij[i] = (1 / 2) * (Saux[i, 1] - Saux[i, 0]) ** 2 / number_of_appearanes
-            percentage_contribution_ij[i] = 100 * sum_of_squares_ij[i] / sum_of_deviation
-
-    ### 3-level interaction ###
-    # Container for appearance of minimum/maximum value
-    Saux = np.zeros((len(no_of_interactions_3), no_of_levels))
-    for j in range(number_of_simulations):
-        for i in range(len(no_of_interactions_3)):
-            # Interaction sequence of all possible 3-level interactions is created by multiplying the
-            # three respective elements from yates array
-            interaction = factorial_design_array[j, no_of_interactions_3[i][0]] * \
-                          factorial_design_array[j, no_of_interactions_3[i][1]] * \
-                          factorial_design_array[j, no_of_interactions_3[i][2]]
-            if interaction == -1:
-                Saux[i, 0] += objective_values[j]
-            else:
-                Saux[i, 1] += objective_values[j]
-
-    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
-        for i in range(len(no_of_interactions_3)):
-            sum_of_squares_ijk[i] = (1 / 2) * (Saux[i, 1] - Saux[i, 0]) ** 2 / number_of_appearanes
-            percentage_contribution_ijk[i] = 100 * sum_of_squares_ijk[i] / sum_of_deviation
-
-    ### Error contribution ###
-    sum_of_squares_error = sum_of_deviation - np.sum(sum_of_squares_i) - \
-                           np.sum(sum_of_squares_ij) - np.sum(sum_of_squares_ijk)
-
-    percentage_contribution_error = 0
-    if sum_of_deviation > 1e-6:  # If there is a deviation, then there is a contribution.
-        percentage_contribution_error = 100 * sum_of_squares_error / sum_of_deviation
-
-    """
-    Because the function returns 4 separate variables, this is how data can be saved from this
-    function:
-
-    percentage_contribution_i, percentage_contribution_ij, percentage_contribution_ijk,
-    percentage_contribution_e = Util.anova_analysis(<objectives>, <yates_array>)
-    """
-
-    return percentage_contribution_i, percentage_contribution_ij, \
-           percentage_contribution_ijk, percentage_contribution_error

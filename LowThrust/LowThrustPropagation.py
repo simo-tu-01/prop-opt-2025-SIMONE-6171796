@@ -115,6 +115,9 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+import sys
+sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+
 # General imports
 import numpy as np
 import os
@@ -167,9 +170,6 @@ minimum_mars_distance = 5.0E7
 # Time since 'departure from Earth CoM' at which propagation starts (and similar
 # for arrival time)
 time_buffer = 30.0 * constants.JULIAN_DAY
-# Time at which to start propagation
-initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
-                                                            time_buffer)
 
 ###########################################################################
 # CREATE ENVIRONMENT ######################################################
@@ -195,15 +195,16 @@ bodies = environment_setup.create_system_of_bodies(body_settings)
 bodies.create_empty_body('Vehicle')
 bodies.get_body('Vehicle').mass = vehicle_mass
 
-##############################################
-### RETRIEVING DEPENDENT VARIABLES TO SAVE ###
-##############################################
-
-# Retrieve dependent variables to save
-dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-# Check whether there are any
-are_dependent_variables_to_save = False if not dependent_variables_to_save else True
-
+# Create vehicle object and add it to the existing system of bodies
+bodies.create_empty_body('Vehicle')
+bodies.get_body('Vehicle').mass = vehicle_mass
+thrust_magnitude_settings = (
+    propagation_setup.thrust.custom_thrust_magnitude_fixed_isp(lambda time: 0.0, specific_impulse))
+environment_setup.add_engine_model(
+    'Vehicle', 'LowThrustEngine', thrust_magnitude_settings, bodies)
+environment_setup.add_rotation_model(
+    bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
+        lambda time: np.array([1, 0, 0]), global_frame_orientation, 'VehcleFixed'))
 
 ################################
 ### DESIGN SPACE EXPLORATION ###
@@ -276,13 +277,8 @@ for simulation_index in range(number_of_simulations):
 
     parameters[simulation_index] = trajectory_parameters
 
-    # Create integrator settings
-    integrator_settings = Util.get_integrator_settings(0, 0, 0, initial_propagation_time)
-
     # Problem class is created
     current_low_thrust_problem = LowThrustProblem(bodies,
-                                                     integrator_settings,
-                                                     specific_impulse,
                                                       minimum_mars_distance,
                                                       time_buffer,
                                                       vehicle_mass,

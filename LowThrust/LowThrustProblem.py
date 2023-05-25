@@ -61,8 +61,6 @@ class LowThrustProblem:
 
     def __init__(self,
                  bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                 integrator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings,
-                 specific_impulse: float,
                  minimum_mars_distance: float,
                  time_buffer: float,
                  vehicle_mass: float,
@@ -74,10 +72,6 @@ class LowThrustProblem:
         ----------
         bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
             System of bodies present in the simulation.
-        integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
-            Integrator settings to be provided to the dynamics simulator.
-        specific_impulse : float
-            Constant specific impulse of the vehicle.
         minimum_mars_distance : float
             Minimum distance from Mars at which the propagation stops.
         time_buffer : float
@@ -90,8 +84,6 @@ class LowThrustProblem:
         """
         # Copy arguments as attributes
         self.bodies_function = lambda : bodies
-        self.integrator_settings_function = lambda : integrator_settings
-        self.specific_impulse = specific_impulse
         self.minimum_mars_distance = minimum_mars_distance
         self.time_buffer = time_buffer
         self.vehicle_mass = vehicle_mass
@@ -168,41 +160,45 @@ class LowThrustProblem:
             Fitness value (for optimization, see assignment 3).
         """
         # Create hodographic shaping object
+        trajectory_parameters[2]=round(trajectory_parameters[2])
+
         bodies = self.bodies_function()
-        hodographic_shaping = Util.create_hodographic_shaping_object(trajectory_parameters,
-                                                                     bodies)
-        self.hodographic_shaping_function = lambda : hodographic_shaping
+        trajectory_object = Util.create_hodographic_trajectory(trajectory_parameters, bodies)
 
         # Propagate trajectory only if required
         if self.perform_propagation:
 
-            integrator_settings = self.integrator_settings_function( )
-
+            # Retrieve termination settings
             termination_settings = Util.get_termination_settings(trajectory_parameters,
                                                                  self.minimum_mars_distance,
                                                                  self.time_buffer)
-            initial_propagation_time = Util.get_trajectory_initial_time(trajectory_parameters,
-                                                                   self.time_buffer)
+            # Retrieve dependent variables to save
             dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+            # Check whether there is any
+            are_dependent_variables_to_save = False if not dependent_variables_to_save else True
+
+            # Create propagator settings for benchmark (Cowell)
+            initial_propagation_time = Util.get_trajectory_initial_time(
+                trajectory_parameters, self.time_buffer)
             propagator_settings = Util.get_propagator_settings(
                 trajectory_parameters,
                 bodies,
                 initial_propagation_time,
-                self.specific_impulse,
                 self.vehicle_mass,
                 termination_settings,
                 dependent_variables_to_save,
                 current_propagator=propagation_setup.propagator.cowell )
 
+            propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+                86400.0, propagation_setup.integrator.CoefficientSets.rkdp_87)
+
 
             # Create simulation object and propagate dynamics
-            dynamics_simulator = numerical_simulation.SingleArcSimulator(bodies,
-                                                                              integrator_settings,
-                                                                              propagator_settings,
-                                                                              print_dependent_variable_data = False)
+            dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+                bodies, propagator_settings )
 
             self.dynamics_simulator_function = lambda : dynamics_simulator
 
         # Add the objective and constraint values into the fitness vector
-        fitness = hodographic_shaping.compute_delta_v( )
+        fitness = trajectory_object.delta_v_per_leg[ 0 ]
         return [fitness]

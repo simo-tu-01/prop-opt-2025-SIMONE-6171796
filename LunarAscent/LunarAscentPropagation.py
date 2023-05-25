@@ -105,6 +105,10 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 # IMPORT STATEMENTS #######################################################
 ###########################################################################
 
+
+import sys
+sys.path.insert(0, "/home/dominic/Tudat/tudat-bundle/tudat-bundle/cmake-build-default/tudatpy")
+
 # General imports
 import numpy as np
 import os
@@ -180,20 +184,24 @@ bodies.create_empty_body('Vehicle')
 # Set mass of vehicle
 bodies.get_body('Vehicle').mass = vehicle_mass
 
+# Create thrust model, with dummy settings, to be overridden when processing the thrust parameters
+thrust_magnitude_settings = (
+    propagation_setup.thrust.constant_thrust_magnitude( thrust_magnitude=0.0, specific_impulse=constant_specific_impulse ) )
+environment_setup.add_engine_model(
+    'Vehicle', 'MainEngine', thrust_magnitude_settings, bodies )
+environment_setup.add_rotation_model(
+    bodies, 'Vehicle', environment_setup.rotation_model.custom_inertial_direction_based(
+        lambda time : np.array([1,0,0] ), global_frame_orientation, 'VehcleFixed' ) )
+
 #######################################################################
-### TERMINATION SETTINGS AND RETRIEVING DEPENDENT VARIABLES TO SAVE ###
-#######################################################################
+### TERMINATION SETTINGS
+###########################################################
 
 # Retrieve termination settings
 termination_settings = Util.get_termination_settings(simulation_start_epoch,
                                                      maximum_duration,
                                                      termination_altitude,
                                                      vehicle_dry_mass)
-# Retrieve dependent variables to save
-dependent_variables_to_save = Util.get_dependent_variable_save_settings()
-# Check whether there is any
-are_dependent_variables_to_save = False if not dependent_variables_to_save else True
-
 ################################
 ### DESIGN SPACE EXPLORATION ###
 ################################
@@ -265,14 +273,9 @@ for simulation_index in range(number_of_simulations):
 
     parameters[simulation_index] = thrust_parameters
 
-    # Create integrator settings
-    integrator_settings = Util.get_integrator_settings(0, 0, 0, simulation_start_epoch)
-
     # Problem class is created
     current_lunar_ascent_problem = LunarAscentProblem(bodies,
-                                                      integrator_settings,
                                                       termination_settings,
-                                                      constant_specific_impulse,
                                                       simulation_start_epoch,
                                                       vehicle_mass,
                                                       decision_variable_range)

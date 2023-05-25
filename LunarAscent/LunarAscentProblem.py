@@ -58,9 +58,7 @@ class LunarAscentProblem:
 
     def __init__(self,
                  bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                 integrator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings,
                  termination_settings,
-                 constant_specific_impulse: float,
                  simulation_start_epoch: float,
                  vehicle_mass: float,
                  decision_variable_range):
@@ -84,9 +82,7 @@ class LunarAscentProblem:
         """
         # Set attributes
         self.bodies_function = lambda : bodies
-        self.integrator_settings_function = lambda :integrator_settings
         self.termination_settings_function = lambda :termination_settings
-        self.constant_specific_impulse = constant_specific_impulse
         self.simulation_start_epoch = simulation_start_epoch
         self.vehicle_mass = vehicle_mass
         self.decision_variable_range = decision_variable_range
@@ -162,24 +158,24 @@ class LunarAscentProblem:
         """
 
         bodies = self.bodies_function()
-        integrator_settings = self.integrator_settings_function()
 
         termination_settings = self.termination_settings_function( )
         dependent_variables_to_save = Util.get_dependent_variable_save_settings()
+
         propagator_settings = Util.get_propagator_settings(
             thrust_parameters,
             bodies,
             self.simulation_start_epoch,
-            self.constant_specific_impulse,
             self.vehicle_mass,
             termination_settings,
-            dependent_variables_to_save)
+            dependent_variables_to_save )
+        propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+            2.0, propagation_setup.integrator.CoefficientSets.rkdp_87)
+
 
         # Create simulation object and propagate dynamics
-        dynamics_simulator = numerical_simulation.SingleArcSimulator(bodies,
-                                                                     integrator_settings,
-                                                                     propagator_settings,
-                                                                     print_dependent_variable_data = False)
+        dynamics_simulator = numerical_simulation.create_dynamics_simulator(
+            bodies, propagator_settings )
         self.dynamics_simulator_function = lambda: dynamics_simulator
 
         # Add the objective and constraint values into the fitness vector
