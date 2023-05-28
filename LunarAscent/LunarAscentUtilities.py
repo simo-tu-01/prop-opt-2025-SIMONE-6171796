@@ -169,7 +169,8 @@ def get_dependent_variable_save_settings() -> list:
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.altitude('Vehicle', 'Moon'),
                                    propagation_setup.dependent_variable.relative_speed('Vehicle', 'Moon'),
-                                   propagation_setup.dependent_variable.flight_path_angle('Vehicle', 'Moon')]
+                                   propagation_setup.dependent_variable.flight_path_angle('Vehicle', 'Moon'),
+                                   propagation_setup.dependent_variable.single_acceleration(propagation_setup.acceleration.thrust_acceleration_type, 'Vehicle', 'Vehicle')]
     return dependent_variables_to_save
 
 def get_propagator_settings(thrust_parameters,

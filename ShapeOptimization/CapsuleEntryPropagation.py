@@ -215,7 +215,7 @@ if design_space_method == 'monte_carlo_one_at_a_time':
     print('\n Random Seed :', random_seed, '\n')
 
 elif design_space_method == 'monte_carlo':
-    number_of_simulations = 1000
+    number_of_simulations = 100
     random_seed = 42 # ;)
     np.random.seed(random_seed) # Slightly outdated way of doing this, but works
     print('\n Random Seed :', random_seed, '\n')
@@ -240,6 +240,8 @@ objectives_and_constraints = dict()
 
 for simulation_index in range(number_of_simulations):
 
+    print('Simulation', simulation_index)
+
     # The factorial design runs through each row of Yates array and translates
     # the value at each index to a corresponding parameter value in
     # design_variable_arr
@@ -247,8 +249,13 @@ for simulation_index in range(number_of_simulations):
         level_combination = yates_array[simulation_index, :]
         # Enumerate simplifies the code because the entries in yates_array can
         # directly be fed as indexes to the design parameters
-        for it, j in enumerate(level_combination): #Run through the row of levels from 0 to no_of_levels
-            shape_parameters[it] = design_variable_arr[j, it]
+        for it, j in enumerate(level_combination):  # Run through the row of levels from 0 to no_of_levels
+            # IF WE SWITCH BETWEEN INDICES 1 AND -1, WE'LL ALWAYS BE GETTING "THE SECOND ENTRY" OF THE ARRAY.
+            # WHAT I DID HERE ENSURES THAT THE LOWEST LEVEL CORRESPONDS TO ENTRY 0 OF THE ARRAY.
+            if j == -1:
+                shape_parameters[it] = design_variable_arr[int(j+no_of_levels/2), it]
+            else:
+                shape_parameters[it] = design_variable_arr[j, it]
 
     elif design_space_method == 'monte_carlo':
         # If Monte Carlo, a random value is chosen with a uniform distribtion (NOTE: You can change the distribution)
@@ -261,6 +268,8 @@ for simulation_index in range(number_of_simulations):
             current_parameter = int(simulation_index/number_of_simulations_per_parameter)
             shape_parameters[current_parameter] = np.random.uniform(decision_variable_range[0][current_parameter], decision_variable_range[1][current_parameter])
 
+
+    print('Parameters:', shape_parameters)
     parameters[simulation_index] = shape_parameters.copy()
 
     # Problem class is created
@@ -272,7 +281,8 @@ for simulation_index in range(number_of_simulations):
 
 
     # NOTE: Propagator settings, termination settings, and initial_propagation_time are defined in the fitness function
-    fitness = current_capsule_entry_problem.fitness(shape_parameters)
+    fitness = current_capsule_entry_problem.fitness(shape_parameters) # RIGHT NOW, FITNESS IS ALWAYS 0.0! MODIFY THE FUNCTION APPROPRIATELY
+    print('Fitness:', fitness)
     objectives_and_constraints[simulation_index] = fitness
 
     ### OUTPUT OF THE SIMULATION ###

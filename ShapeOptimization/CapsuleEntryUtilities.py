@@ -152,7 +152,9 @@ def get_dependent_variable_save_settings() -> list:
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.mach_number('Capsule', 'Earth'),
-                                   propagation_setup.dependent_variable.altitude('Capsule', 'Earth')]
+                                   propagation_setup.dependent_variable.altitude('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.angle_of_attack('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.aerodynamic_force_coefficients('Capsule', 'Earth')]
     return dependent_variables_to_save
 
 

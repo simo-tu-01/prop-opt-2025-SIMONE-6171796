@@ -249,7 +249,8 @@ parameters = dict()
 objectives_and_constraints = dict()
 
 for simulation_index in range(number_of_simulations):
-    print(simulation_index)
+
+    print('Simulation', simulation_index)
 
     # The factorial design runs through each row of Yates array and translates
     # the value at each index to a corresponding parameter value in
@@ -259,7 +260,12 @@ for simulation_index in range(number_of_simulations):
         # Enumerate simplifies the code because the entries in yates_array can
         # directly be fed as indexes to the design parameters
         for it, j in enumerate(level_combination): #Run through the row of levels from 0 to no_of_levels
-            thrust_parameters[it] = design_variable_arr[j, it]
+            # IF WE SWITCH BETWEEN INDICES 1 AND -1, WE'LL ALWAYS BE GETTING "THE SECOND ENTRY" OF THE ARRAY.
+            # WHAT I DID HERE ENSURES THAT THE LOWEST LEVEL CORRESPONDS TO ENTRY 0 OF THE ARRAY.
+            if j == -1:
+                thrust_parameters[it] = design_variable_arr[int(j+no_of_levels/2), it]
+            else:
+                thrust_parameters[it] = design_variable_arr[j, it]
     elif design_space_method == 'monte_carlo':
         # For Monte Carlo and FFD, a separate loop exists
         for parameter_index in range(number_of_parameters):
@@ -271,8 +277,8 @@ for simulation_index in range(number_of_simulations):
             current_parameter = int(simulation_index/number_of_simulations_per_parameter)
             trajectory_parameters[current_parameter] = np.random.uniform(decision_variable_range[0][current_parameter], decision_variable_range[1][current_parameter])
 
-
-    parameters[simulation_index] = thrust_parameters
+    print('Thrust parameters:', thrust_parameters)
+    parameters[simulation_index] = thrust_parameters.copy()
 
     # Problem class is created
     current_lunar_ascent_problem = LunarAscentProblem(bodies,
@@ -283,7 +289,8 @@ for simulation_index in range(number_of_simulations):
 
 
     # NOTE: Propagator settings, termination settings, and initial_propagation_time are defined in the fitness function
-    fitness = current_lunar_ascent_problem.fitness(thrust_parameters)
+    fitness = current_lunar_ascent_problem.fitness(thrust_parameters)  # RIGHT NOW, FITNESS IS ALWAYS 0.0! MODIFY THE FUNCTION APPROPRIATELY
+    print('Fitness:', fitness)
     objectives_and_constraints[simulation_index] = fitness
 
     ### OUTPUT OF THE SIMULATION ###

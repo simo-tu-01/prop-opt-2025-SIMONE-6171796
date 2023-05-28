@@ -119,7 +119,8 @@ def get_propagator_settings( trajectory_parameters,
                              initial_propagation_time,
                              vehicle_initial_mass,
                              termination_settings,
-                             dependent_variables_to_save ):
+                             dependent_variables_to_save,
+                             current_propagator=propagation_setup.propagator.cowell):
     """
     Creates the propagator settings.
 
@@ -186,7 +187,7 @@ def get_propagator_settings( trajectory_parameters,
         initial_propagation_time,
         None,
         termination_settings,
-        propagation_setup.propagator.cowell,
+        current_propagator,
         output_variables=dependent_variables_to_save)
 
     # Create mass rate model
@@ -260,7 +261,7 @@ def get_trajectory_initial_time(trajectory_parameters: list,
     return trajectory_parameters[0] * constants.JULIAN_DAY + buffer_time
 
 def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
-                               output_path: str ):
+                               output_path: str = None):
     """
     It computes the analytical hodographic trajectory and saves the results to a file
     This function analytically calculates the hodographic trajectory from the Hodographic Shaping object.
@@ -282,9 +283,10 @@ def get_hodographic_trajectory(shaping_object: tudatpy.kernel.trajectory_design.
     # Extract trajectory shape
     trajectory_shape = shaping_object.states_along_trajectory(number_of_data_points)
     # If desired, save results to files
-    save2txt(trajectory_shape,
-                 'hodographic_trajectory.dat',
-                 output_path)
+    if output_path is not None:
+        save2txt(trajectory_shape,
+                     'hodographic_trajectory.dat',
+                     output_path)
 
 def get_trajectory_final_time(trajectory_parameters: list,
                               buffer_time: float = 0.0) -> float:
@@ -508,6 +510,7 @@ def create_hodographic_trajectory(trajectory_parameters: list,
 
     #transfer_trajectory.print_parameter_definitions( [hodographic_leg_settings], node_settings )
     hodograph_free_parameters = trajectory_parameters[2:9]
+    hodograph_free_parameters[0] = int(hodograph_free_parameters[0])  # I had to add this. The 2.9999 revs broke.
 
     # Depart and arrive with 0 excess velocity
     node_parameters = list()
@@ -659,8 +662,8 @@ def generate_benchmarks(benchmark_step_size: float,
 
 def compare_benchmarks(first_benchmark: dict,
                        second_benchmark: dict,
-                       output_path: str,
-                       filename: str) -> dict:
+                       output_path: str = None,
+                       filename: str = None) -> dict:
     """
     It compares the results of two benchmark runs.
 
@@ -704,8 +707,8 @@ def compare_benchmarks(first_benchmark: dict,
 def compare_models(first_model: dict,
                    second_model: dict,
                    interpolation_epochs: np.ndarray,
-                   output_path: str,
-                   filename: str) -> dict:
+                   output_path: str = None,
+                   filename: str = None) -> dict:
     """
     It compares the results of two runs with different model settings.
     It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
@@ -746,3 +749,21 @@ def compare_models(first_model: dict,
                  output_path)
     # Return the model difference
     return model_difference
+
+def extract_elements_from_history(history: dict, index) -> dict:
+
+    if type(index) is int: index = [index]
+    elif type(index) is list: pass
+    else: raise TypeError('(extract_element_from_history): Illegal index type.')
+
+
+    n = len(index)
+    new_history = dict.fromkeys(list(history.keys()))
+    for key in list(new_history.keys()):
+        new_history[key] = np.zeros(n)
+        k = 0
+        for current_index in index:
+            new_history[key][k] = history[key][current_index]
+            k = k + 1
+
+    return new_history
