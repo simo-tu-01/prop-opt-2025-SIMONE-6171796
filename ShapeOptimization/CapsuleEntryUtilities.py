@@ -218,7 +218,6 @@ def get_propagator_settings(shape_parameters,
     new_angle_function = lambda time : new_angles
     bodies.get_body('Capsule').rotation_model.reset_aerodynamic_angle_function( new_angle_function )
 
-
     # Retrieve initial state
     initial_state = get_initial_state(simulation_start_epoch,bodies)
 

@@ -300,9 +300,6 @@ for simulation_index in range(number_of_simulations):
     ### OUTPUT OF THE SIMULATION ###
     # Retrieve propagated state and dependent variables
     state_history = current_low_thrust_problem.get_last_run_dynamics_simulator().state_history
-    current_transfer_trajectory = Util.create_hodographic_trajectory(parameters[simulation_index],
-                                                                     bodies).states_along_trajectory(10000)
-    prop_vs_anal = Util.compare_models(Util.extract_elements_from_history(state_history, list(range(6))), current_transfer_trajectory, list(state_history.keys()))
     dependent_variable_history = current_low_thrust_problem.get_last_run_dynamics_simulator().dependent_variable_history
 
     # Get output path
@@ -318,7 +315,6 @@ for simulation_index in range(number_of_simulations):
     if write_results_to_file:
         save2txt(state_history, 'state_history.dat', output_path)
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
-        save2txt(prop_vs_anal, 'prop_vs_anal.dat', output_path)
 
 if write_results_to_file:
     subdirectory = '/DesignSpace_%s'%(design_space_method)

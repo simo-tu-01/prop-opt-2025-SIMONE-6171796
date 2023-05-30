@@ -750,20 +750,3 @@ def compare_models(first_model: dict,
     # Return the model difference
     return model_difference
 
-def extract_elements_from_history(history: dict, index) -> dict:
-
-    if type(index) is int: index = [index]
-    elif type(index) is list: pass
-    else: raise TypeError('(extract_element_from_history): Illegal index type.')
-
-
-    n = len(index)
-    new_history = dict.fromkeys(list(history.keys()))
-    for key in list(new_history.keys()):
-        new_history[key] = np.zeros(n)
-        k = 0
-        for current_index in index:
-            new_history[key][k] = history[key][current_index]
-            k = k + 1
-
-    return new_history

@@ -200,7 +200,7 @@ decision_variable_range = \
      [ 10.0, 3.0, 5.0, np.deg2rad(-10.0), 0.5, np.deg2rad(30.0) ]]
 
 # NOTE TO STUDENTS: HERE YOU INPUT WHAT DESIGN SPACE EXPLORATION METHOD YOU USE
-design_space_method = 'factorial_design'
+design_space_method = 'monte_carlo'
 
 number_of_parameters = len(decision_variable_range[0])
 
@@ -303,6 +303,9 @@ for simulation_index in range(number_of_simulations):
     if write_results_to_file:
         save2txt(state_history, 'state_history.dat', output_path)
         save2txt(dependent_variable_history, 'dependent_variable_history.dat', output_path)
+
+    # Delete data in aerodynamic coefficient database
+    bodies.get_body( 'Capsule' ).aerodynamic_coefficient_interface.clear_data()
 
 if write_results_to_file:
     subdirectory = '/DesignSpace_%s'%(design_space_method)
