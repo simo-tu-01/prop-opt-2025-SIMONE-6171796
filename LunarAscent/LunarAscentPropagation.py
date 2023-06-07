@@ -273,9 +273,9 @@ for simulation_index in range(number_of_simulations):
             thrust_parameters[parameter_index] = np.random.uniform(decision_variable_range[0][parameter_index], decision_variable_range[1][parameter_index])
     elif design_space_method == 'monte_carlo_one_at_a_time':
             # If Monte Carlo, a random value is chosen with a uniform distribtion (NOTE: You can change the distribution)
-            trajectory_parameters = nominal_parameters
+            thrust_parameters = nominal_parameters
             current_parameter = int(simulation_index/number_of_simulations_per_parameter)
-            trajectory_parameters[current_parameter] = np.random.uniform(decision_variable_range[0][current_parameter], decision_variable_range[1][current_parameter])
+            thrust_parameters[current_parameter] = np.random.uniform(decision_variable_range[0][current_parameter], decision_variable_range[1][current_parameter])
 
     print('Thrust parameters:', thrust_parameters)
     parameters[simulation_index] = thrust_parameters.copy()
