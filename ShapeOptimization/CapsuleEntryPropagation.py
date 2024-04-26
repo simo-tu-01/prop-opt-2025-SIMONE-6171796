@@ -107,7 +107,7 @@ In such cases, the selected integrator settings are unsuitable for the problem y
 import os
 
 # Tudatpy imports
-from tudatpy.io import save2txt
+from tudatpy.data import save2txt
 from tudatpy.kernel import constants
 from tudatpy.kernel.interface import spice_interface
 from tudatpy.kernel.numerical_simulation import environment_setup
@@ -135,7 +135,7 @@ shape_parameters = [8.148730872315355,
                     0.4559143679738996]
 # Choose whether benchmark is run
 use_benchmark = True
-run_integrator_analysis = False
+run_integrator_analysis = True
 
 # Choose whether output of the propagation is written to files
 write_results_to_file = True
