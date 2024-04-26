@@ -682,7 +682,6 @@ def generate_benchmarks(benchmark_step_size: float,
         np.inf)
     benchmark_propagator_settings.integrator_settings = benchmark_integrator_settings
 
-    print('Running first benchmark...')
     first_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
         benchmark_propagator_settings )
@@ -697,7 +696,6 @@ def generate_benchmarks(benchmark_step_size: float,
         np.inf)
     benchmark_propagator_settings.integrator_settings = benchmark_integrator_settings
 
-    print('Running second benchmark...')
     second_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
         bodies,
         benchmark_propagator_settings )
@@ -760,8 +758,6 @@ def compare_benchmarks(first_benchmark: dict,
     # Create 8th-order Lagrange interpolator for first benchmark
     benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(first_benchmark,
                                                                                       interpolators.lagrange_interpolation(8))
-    # Calculate the difference between the benchmarks
-    print('Calculating benchmark differences...')
     # Initialize difference dictionaries
     benchmark_difference = dict()
     # Calculate the difference between the states and dependent variables in an iterative manner

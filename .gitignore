@@ -2,3 +2,5 @@
 *.iml
 *.xml
 *.dat
+*idea/
+*/SimulationOutput/*
