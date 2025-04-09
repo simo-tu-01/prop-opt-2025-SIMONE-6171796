@@ -27,22 +27,22 @@ import numpy as np
 # Tudatpy imports
 import tudatpy
 from tudatpy.data import save2txt
-from tudatpy.kernel import constants
-from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel.numerical_simulation import environment_setup
-from tudatpy.kernel.numerical_simulation import propagation_setup
-from tudatpy.kernel.numerical_simulation import environment
-from tudatpy.kernel import numerical_simulation
-from tudatpy.kernel.astro import element_conversion
-from tudatpy.kernel.math import interpolators
-from tudatpy.kernel.math import geometry
+from tudatpy import constants
+from tudatpy.interface import spice
+from tudatpy.numerical_simulation import environment_setup
+from tudatpy.numerical_simulation import propagation_setup
+from tudatpy.numerical_simulation import environment
+from tudatpy import numerical_simulation
+from tudatpy.astro import element_conversion
+from tudatpy.math import interpolators
+from tudatpy.math import geometry
 
 ###########################################################################
 # PROPAGATION SETTING UTILITIES ###########################################
 ###########################################################################
 
 def get_initial_state(simulation_start_epoch: float,
-                      bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies) -> np.ndarray:
+                      bodies: tudatpy.numerical_simulation.environment.SystemOfBodies) -> np.ndarray:
     """
     Converts the initial state to inertial coordinates.
 
@@ -55,7 +55,7 @@ def get_initial_state(simulation_start_epoch: float,
     ----------
     simulation_start_epoch : float
         Start of the simulation [s] with t=0 at J2000.
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+    bodies : tudatpy.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
 
     Returns
@@ -87,7 +87,7 @@ def get_initial_state(simulation_start_epoch: float,
 def get_termination_settings(simulation_start_epoch: float,
                              maximum_duration: float,
                              termination_altitude: float) \
-        -> tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings:
+        -> tudatpy.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings:
     """
     Get the termination settings for the simulation.
 
@@ -107,7 +107,7 @@ def get_termination_settings(simulation_start_epoch: float,
 
     Returns
     -------
-    hybrid_termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
+    hybrid_termination_settings : tudatpy.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
         Propagation termination settings object.
     """
     # Create single PropagationTerminationSettings objects
@@ -148,7 +148,7 @@ def get_dependent_variable_save_settings() -> list:
 
     Returns
     -------
-    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
+    dependent_variables_to_save : list[tudatpy.numerical_simulation.propagation_setup.dependent_variable]
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.mach_number('Capsule', 'Earth'),
@@ -161,7 +161,7 @@ def get_integrator_settings(propagator_index: int,
                             integrator_index: int,
                             settings_index: int,
                             simulation_start_epoch: float) \
-        -> tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
+        -> tudatpy.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
     """
 
     Retrieves the integrator settings.
@@ -193,7 +193,7 @@ def get_integrator_settings(propagator_index: int,
 
     Returns
     -------
-    integrator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.IntegratorSettings
+    integrator_settings : tudatpy.numerical_simulation.propagation_setup.integrator.IntegratorSettings
         Integrator settings to be provided to the dynamics simulator.
     """
     # Define list of multi-stage integrators
@@ -226,8 +226,9 @@ def get_integrator_settings(propagator_index: int,
         fixed_step_size = 2 ** settings_index
         # Create integrator settings
         integrator = propagation_setup.integrator
-        integrator_settings = integrator.runge_kutta_4(simulation_start_epoch,
-                                                       fixed_step_size)
+        integrator_settings = integrator.runge_kutta_fixed_step_size(
+            fixed_step_size, propagation_setup.integrator.CoefficientSets.rk_4)
+
     return integrator_settings
 
 
@@ -251,20 +252,20 @@ def get_propagator_settings(shape_parameters,
         List of free parameters for the low-thrust model, which will be used to update the vehicle properties such that
         the new thrust/magnitude direction are used. The meaning of the parameters in this list is stated at the
         start of the *Propagation.py file
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+    bodies : tudatpy.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     simulation_start_epoch : float
         Start of the simulation [s] with t=0 at J2000.
-    termination_settings : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
+    termination_settings : tudatpy.numerical_simulation.propagation_setup.propagator.PropagationTerminationSettings
         Propagation termination settings object to be used
-    dependent_variables_to_save : list[tudatpy.kernel.numerical_simulation.propagation_setup.dependent_variable]
+    dependent_variables_to_save : list[tudatpy.numerical_simulation.propagation_setup.dependent_variable]
         List of dependent variables to save.
-    current_propagator : tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalPropagatorType
+    current_propagator : tudatpy.numerical_simulation.propagation_setup.propagator.TranslationalPropagatorType
         Type of propagator to be used for translational dynamics
 
     Returns
     -------
-    propagator_settings : tudatpy.kernel.numerical_simulation.propagation_setup.integrator.MultiTypePropagatorSettings
+    propagator_settings : tudatpy.numerical_simulation.propagation_setup.integrator.MultiTypePropagatorSettings
         Propagator settings to be provided to the dynamics simulator.
     """
 
@@ -312,8 +313,8 @@ def get_propagator_settings(shape_parameters,
 ###########################################################################
 
 
-def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometry.Capsule) \
-        -> tudatpy.kernel.numerical_simulation.environment.HypersonicLocalInclinationAnalysis:
+def get_capsule_coefficient_interface(capsule_shape: tudatpy.math.geometry.Capsule) \
+        -> tudatpy.numerical_simulation.environment.HypersonicLocalInclinationAnalysis:
     """
     Function that creates an aerodynamic database for a capsule, based on a set of shape parameters.
 
@@ -326,12 +327,12 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
 
     Parameters
     ----------
-    capsule_shape : tudatpy.kernel.math.geometry.Capsule
+    capsule_shape : tudatpy.math.geometry.Capsule
         Object that defines the shape of the vehicle.
 
     Returns
     -------
-    hypersonic_local_inclination_analysis : tudatpy.kernel.environment.HypersonicLocalInclinationAnalysis
+    hypersonic_local_inclination_analysis : tudatpy.environment.HypersonicLocalInclinationAnalysis
         Database created through the local inclination analysis method.
     """
 
@@ -380,7 +381,7 @@ def get_capsule_coefficient_interface(capsule_shape: tudatpy.kernel.math.geometr
 
 
 def set_capsule_shape_parameters(shape_parameters: list,
-                                 bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+                                 bodies: tudatpy.numerical_simulation.environment.SystemOfBodies,
                                  capsule_density: float):
     """
     It computes and creates the properties of the capsule (shape, mass, aerodynamic coefficient interface...).
@@ -389,7 +390,7 @@ def set_capsule_shape_parameters(shape_parameters: list,
     ----------
     shape_parameters : list of floats
         List of shape parameters to be optimized.
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+    bodies : tudatpy.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     capsule_density : float
         Constant density of the vehicle.
@@ -421,7 +422,7 @@ def set_capsule_shape_parameters(shape_parameters: list,
 
 # NOTE TO STUDENTS: if and when making modifications to the capsule shape, do include them in this function and not in
 # the main code.
-def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+def add_capsule_to_body_system(bodies: tudatpy.numerical_simulation.environment.SystemOfBodies,
                                shape_parameters: list,
                                capsule_density: float):
     """
@@ -430,7 +431,7 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.envir
 
     Parameters
     ----------
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies
+    bodies : tudatpy.numerical_simulation.environment.SystemOfBodies
         System of bodies present in the simulation.
     shape_parameters : list of floats
         List of shape parameters to be optimized.
@@ -464,8 +465,8 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.envir
 # NOTE TO STUDENTS: THIS FUNCTION CAN BE EXTENDED TO GENERATE A MORE ROBUST BENCHMARK (USING MORE THAN 2 RUNS)
 def generate_benchmarks(benchmark_step_size,
                         simulation_start_epoch: float,
-                        bodies: tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
-                        benchmark_propagator_settings: tudatpy.kernel.numerical_simulation.propagation_setup.propagator.TranslationalStatePropagatorSettings,
+                        bodies: tudatpy.numerical_simulation.environment.SystemOfBodies,
+                        benchmark_propagator_settings: tudatpy.numerical_simulation.propagation_setup.propagator.TranslationalStatePropagatorSettings,
                         are_dependent_variables_present: bool,
                         output_path: str = None):
     """
@@ -484,7 +485,7 @@ def generate_benchmarks(benchmark_step_size,
     benchmark_step_size : float
         Time step of the benchmark that will be used. Two benchmark simulations will be run, both fixed-step 8th order
          (first benchmark uses benchmark_step_size, second benchmark uses 2.0 * benchmark_step_size)
-    bodies : tudatpy.kernel.numerical_simulation.environment.SystemOfBodies,
+    bodies : tudatpy.numerical_simulation.environment.SystemOfBodies,
         System of bodies present in the simulation.
     benchmark_propagator_settings
         Propagator settings object which is used to run the benchmark propagations.

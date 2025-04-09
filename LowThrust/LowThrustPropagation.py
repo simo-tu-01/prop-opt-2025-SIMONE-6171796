@@ -122,12 +122,12 @@ import os
 
 # Tudatpy imports
 from tudatpy.data import save2txt
-from tudatpy.kernel import constants
-from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel import numerical_simulation
-from tudatpy.kernel.numerical_simulation import environment_setup
-from tudatpy.kernel.numerical_simulation import propagation_setup
-from tudatpy.kernel.math import interpolators
+from tudatpy import constants
+from tudatpy.interface import spice
+from tudatpy import numerical_simulation
+from tudatpy.numerical_simulation import environment_setup
+from tudatpy.numerical_simulation import propagation_setup
+from tudatpy.math import interpolators
 
 # Problem-specific imports
 import LowThrustUtilities as Util
