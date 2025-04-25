@@ -28,7 +28,7 @@ import numpy as np
 import tudatpy
 from tudatpy.data import save2txt
 from tudatpy import constants
-from tudatpy.interface import spice
+from tudatpy.interface import spice as spice_interface
 from tudatpy.numerical_simulation import environment_setup
 from tudatpy.numerical_simulation import propagation_setup
 from tudatpy.numerical_simulation import environment
@@ -413,7 +413,7 @@ def set_capsule_shape_parameters(shape_parameters: list,
     # Compute new body mass
     new_capsule_mass = capsule_density * new_capsule.volume
     # Set capsule mass
-    bodies.get_body('Capsule').set_constant_mass(new_capsule_mass)
+    bodies.get_body('Capsule').mass = new_capsule_mass
     # Create aerodynamic interface from shape parameters (this calls the local inclination analysis)
     new_aerodynamic_coefficient_interface = get_capsule_coefficient_interface(new_capsule)
     # Update the Capsule's aerodynamic coefficient interface
