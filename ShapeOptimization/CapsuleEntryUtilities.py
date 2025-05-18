@@ -10,9 +10,9 @@ http://tudat.tudelft.nl/LICENSE.
 
 AE4866 Propagation and Optimization in Astrodynamics
 Shape Optimization
-First name: ***COMPLETE HERE***
-Last name: ***COMPLETE HERE***
-Student number: ***COMPLETE HERE***
+First name: Simone
+Last name: Guccione
+Student number: 6171796
 
 This module defines useful functions that will be called by the main script, where the optimization is executed.
 '''
@@ -26,16 +26,16 @@ import numpy as np
 
 # Tudatpy imports
 import tudatpy
-from tudatpy.io import save2txt
-from tudatpy.kernel import constants
-from tudatpy.kernel.interface import spice_interface
-from tudatpy.kernel.numerical_simulation import environment_setup
-from tudatpy.kernel.numerical_simulation import propagation_setup
-from tudatpy.kernel.numerical_simulation import environment
-from tudatpy.kernel import numerical_simulation
-from tudatpy.kernel.astro import element_conversion
-from tudatpy.kernel.math import interpolators
-from tudatpy.kernel.math import geometry
+from tudatpy.data import save2txt
+from tudatpy import constants
+from tudatpy.interface import spice
+from tudatpy.numerical_simulation import environment_setup
+from tudatpy.numerical_simulation import propagation_setup
+from tudatpy.numerical_simulation import environment
+from tudatpy import numerical_simulation
+from tudatpy.astro import element_conversion
+from tudatpy.math import interpolators
+from tudatpy.math import geometry
 
 ###########################################################################
 # PROPAGATION SETTING UTILITIES ###########################################
@@ -64,7 +64,7 @@ def get_initial_state(simulation_start_epoch: float,
         The initial state of the vehicle expressed in inertial coordinates.
     """
     # Set initial spherical elements
-    radial_distance = spice_interface.get_average_radius('Earth') + 120.0E3
+    radial_distance = spice.get_average_radius('Earth') + 120.0E3
     latitude = np.deg2rad(0.0)
     longitude = np.deg2rad(68.75)
     speed = 7.63E3
@@ -152,7 +152,10 @@ def get_dependent_variable_save_settings() -> list:
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.mach_number('Capsule', 'Earth'),
-                                   propagation_setup.dependent_variable.altitude('Capsule', 'Earth')]
+                                   propagation_setup.dependent_variable.altitude('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.density('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.airspeed('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.single_acceleration_norm(propagation_setup.acceleration.aerodynamic_type, 'Capsule', 'Earth')]
     return dependent_variables_to_save
 
 
@@ -238,7 +241,9 @@ def get_propagator_settings(shape_parameters,
                             dependent_variables_to_save,
                             current_propagator = propagation_setup.propagator.cowell,
                             model_choice = 0,
-                            initial_state_perturbation = np.zeros( 6 ) ):
+                            sh_degree = 0,
+                            sh_order = 0,
+                            initial_state_perturbation = np.zeros(6)):
     """
     Creates the propagator settings.
 
@@ -274,16 +279,69 @@ def get_propagator_settings(shape_parameters,
     bodies_to_propagate = ['Capsule']
     central_bodies = ['Earth']
 
-    # Define accelerations acting on capsule
-    acceleration_settings_on_vehicle = {
-        'Earth': [propagation_setup.acceleration.point_mass_gravity(),
-                  propagation_setup.acceleration.aerodynamic()]
-    }
     # Here different acceleration models are defined
-    if model_choice == 1:
-        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.spherical_harmonic_gravity(2, 2)
+    if model_choice == 0 or model_choice == 5 or model_choice == 7 or model_choice == 8 or model_choice == 9:
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic(),
+                    propagation_setup.acceleration.relativistic_correction(use_schwarzschild= True)],
+            'Sun':[propagation_setup.acceleration.point_mass_gravity(),
+                    propagation_setup.acceleration.radiation_pressure()],
+            'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        }
+    elif model_choice == 1:
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic()],
+            'Sun':[propagation_setup.acceleration.point_mass_gravity()],
+            'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        }
     elif model_choice == 2:
-        acceleration_settings_on_vehicle['Earth'][0] = propagation_setup.acceleration.spherical_harmonic_gravity(4, 4)
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic(),
+                    propagation_setup.acceleration.relativistic_correction(use_schwarzschild= True)],
+            'Sun':[propagation_setup.acceleration.radiation_pressure()],
+            'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        }
+    elif model_choice == 3:
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic(),
+                    propagation_setup.acceleration.relativistic_correction(use_schwarzschild= True)],
+            'Sun':[propagation_setup.acceleration.point_mass_gravity(),
+                    propagation_setup.acceleration.radiation_pressure()],
+        }
+    elif model_choice == 4:
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic(),
+                    propagation_setup.acceleration.relativistic_correction(use_schwarzschild= True)],
+            'Sun':[propagation_setup.acceleration.point_mass_gravity()],
+            'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        }
+    elif model_choice == 6:
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic()],
+            'Sun':[propagation_setup.acceleration.point_mass_gravity(),
+                    propagation_setup.acceleration.radiation_pressure()],
+            'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        }
+    elif model_choice == 'sh':
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic()],
+            'Sun':[propagation_setup.acceleration.point_mass_gravity()],
+            'Moon': [propagation_setup.acceleration.point_mass_gravity()],
+        }
+    elif model_choice == 'sh_no':
+        acceleration_settings_on_vehicle = {
+            'Earth': [propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order),
+                    propagation_setup.acceleration.aerodynamic()]
+
+        }
+
 
     # Create acceleration models.
     acceleration_settings = {'Capsule': acceleration_settings_on_vehicle}
@@ -299,7 +357,7 @@ def get_propagator_settings(shape_parameters,
 
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch,bodies) + initial_state_perturbation
+    initial_state = get_initial_state(simulation_start_epoch, bodies) + initial_state_perturbation
 
     # Create propagation settings for the translational dynamics. NOTE: these are not yet 'valid', as no
     # integrator settings are defined yet
@@ -312,7 +370,87 @@ def get_propagator_settings(shape_parameters,
                                                                      termination_settings,
                                                                      current_propagator,
                                                                      output_variables=dependent_variables_to_save)
+    
     return propagator_settings
+
+
+def get_environment_settings(body_settings,
+                             global_frame_orientation,
+                             simulation_start_epoch,
+                             atmosphere,
+                             shape,
+                             rotation_model,
+                             tides = False):
+    
+
+    if rotation_model == 'IAU':
+        body_settings.get('Earth').rotation_model_settings = environment_setup.rotation_model.spice(
+            global_frame_orientation, 'IAU_Earth')
+    elif rotation_model == 'simple':
+        body_settings.get('Earth').rotation_model_settings = environment_setup.rotation_model.simple_from_spice(
+            global_frame_orientation, 'IAU_Earth', 'IAU_Earth', simulation_start_epoch)
+    elif rotation_model == 'ITRS':
+        body_settings.get( "Earth" ).rotation_model_settings = environment_setup.rotation_model.gcrs_to_itrs(
+            environment_setup.rotation_model.IAUConventions.iau_2006, global_frame_orientation)
+        body_settings.get( "Earth" ).gravity_field_settings.associated_reference_frame = "ITRS"
+    else:
+        raise ValueError(f"Unsupported rotation model: {rotation_model}")
+
+    
+    if atmosphere == 'exponential':
+        body_settings.get("Earth").atmosphere_settings = environment_setup.atmosphere.exponential_predefined('Earth')
+    elif atmosphere == 'US76':
+        body_settings.get( "Earth" ).atmosphere_settings = environment_setup.atmosphere.us76()
+    else:
+        raise ValueError(f"Unsupported atmosphere model: {atmosphere}")
+
+    if shape == 'oblate_spheroid':
+        # Shape model Constants
+        body_radius = 6378.0E3
+        body_flattening = 1.0 / 300.0
+        body_settings.get( "Earth" ).shape_settings = environment_setup.shape.oblate_spherical(body_radius, body_flattening )
+    elif shape == 'sphere':
+        body_settings.get( "Earth" ).shape_settings = environment_setup.shape.spherical_spice()
+    else:
+        raise ValueError(f"Unsupported shape model: {shape}")
+
+    if tides:
+        tide_raising_body = "Moon"
+        degree = 2
+        love_number = 0.301
+        gravity_field_variation_list = list()
+        gravity_field_variation_list.append(environment_setup.gravity_field_variation.solid_body_tide(
+            tide_raising_body, love_number, degree ))
+        body_settings.get( "Earth" ).gravity_field_variation_settings = gravity_field_variation_list
+
+
+
+def get_acceleration_dict(sh_degree, 
+                          sh_order,
+                          aero= False,
+                          Sun= False,
+                          Moon= False,
+                          srp= False,
+                          schwarzschild= False):
+
+    acceleration_settings_on_vehicle = dict()
+
+    acceleration_settings_on_vehicle['Earth'] = propagation_setup.acceleration.spherical_harmonic_gravity(sh_degree, sh_order)
+
+    if aero:
+        acceleration_settings_on_vehicle['Earth'] = propagation_setup.acceleration.aerodynamic()
+    elif Sun:
+        acceleration_settings_on_vehicle['Sun'] = propagation_setup.acceleration.point_mass_gravity()
+    elif Moon:
+        acceleration_settings_on_vehicle['Moon'] = propagation_setup.acceleration.point_mass_gravity()
+    elif srp:
+        acceleration_settings_on_vehicle['Sun'] = propagation_setup.acceleration.radiation_pressure()
+    elif schwarzschild: 
+        acceleration_settings_on_vehicle['Earth'] = propagation_setup.acceleration.relativistic_correction(use_schwarzschild= True)
+
+    return acceleration_settings_on_vehicle
+
+
 
 
 ###########################################################################
@@ -420,7 +558,7 @@ def set_capsule_shape_parameters(shape_parameters: list,
     # Compute new body mass
     new_capsule_mass = capsule_density * new_capsule.volume
     # Set capsule mass
-    bodies.get_body('Capsule').set_constant_mass(new_capsule_mass)
+    bodies.get_body('Capsule').mass = new_capsule_mass
     # Create aerodynamic interface from shape parameters (this calls the local inclination analysis)
     new_aerodynamic_coefficient_interface = get_capsule_coefficient_interface(new_capsule)
     # Update the Capsule's aerodynamic coefficient interface
@@ -457,6 +595,14 @@ def add_capsule_to_body_system(bodies: tudatpy.kernel.numerical_simulation.envir
     environment_setup.add_rotation_model( bodies, 'Capsule',
                                           environment_setup.rotation_model.aerodynamic_angle_based(
                                               'Earth', 'J2000', 'CapsuleFixed', angle_function ))
+    
+    # Create radiation pressure settings
+    reference_area_radiation = 5  # m^2
+    radiation_pressure_coefficient = 1.2
+    environment_setup.add_radiation_pressure_target_model(bodies, 'Capsule',
+                                                          environment_setup.radiation_pressure.cannonball_radiation_target(
+                                                                reference_area_radiation, radiation_pressure_coefficient))
+                                                          
     # Update the capsule shape parameters
     set_capsule_shape_parameters(shape_parameters,
                                  bodies,
@@ -653,3 +799,39 @@ def compare_benchmarks(first_benchmark: dict,
         save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference
+
+
+
+########################################################################################################
+
+def compute_aerodynamic_metrics(dependent_variables_history: dict):
+
+    altitude = np.array([np.linalg.norm(dependent_variables_history[epoch][1]) for epoch in dependent_variables_history.keys()])
+    density = np.array([np.linalg.norm(dependent_variables_history[epoch][2]) for epoch in dependent_variables_history.keys()])
+    airspeed = np.array([np.linalg.norm(dependent_variables_history[epoch][2]) for epoch in dependent_variables_history.keys()])
+    aero_acceleration = np.array([np.linalg.norm(dependent_variables_history[epoch][4]) for epoch in dependent_variables_history.keys()])
+
+    heat_flux = np.sqrt(density) * airspeed ** 3
+    heat_load = density * airspeed ** 3
+    load_factor = aero_acceleration / 9.81
+
+    max_heat_flux = np.max(heat_flux)
+    max_heat_flux_index = np.argmax(heat_flux)
+    altitude_at_max_heat_flux = altitude[max_heat_flux_index]
+
+    max_heat_load = np.max(heat_load)
+    max_heat_load_index = np.argmax(heat_load)
+    altitude_at_max_heat_load = altitude[max_heat_load_index]
+
+    max_load_factor = np.max(load_factor)
+    max_load_factor_index = np.argmax(load_factor)
+    altitude_at_max_load_factor = altitude[max_load_factor_index]
+
+    return {
+        "max_heat_flux": max_heat_flux,
+        "altitude_at_max_heat_flux": altitude_at_max_heat_flux,
+        "max_heat_load": max_heat_load,
+        "altitude_at_max_heat_load": altitude_at_max_heat_load,
+        "max_load_factor": max_load_factor,
+        "altitude_at_max_load_factor": altitude_at_max_load_factor
+    }
