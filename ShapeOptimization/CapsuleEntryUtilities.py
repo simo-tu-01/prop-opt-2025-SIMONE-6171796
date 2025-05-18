@@ -23,6 +23,7 @@ This module defines useful functions that will be called by the main script, whe
 
 # General imports
 import numpy as np
+from math import pi
 
 # Tudatpy imports
 import tudatpy
@@ -152,12 +153,27 @@ def get_dependent_variable_save_settings() -> list:
         List of dependent variables to save.
     """
     dependent_variables_to_save = [propagation_setup.dependent_variable.mach_number('Capsule', 'Earth'),
-                                   propagation_setup.dependent_variable.altitude('Capsule', 'Earth')]
+                                   propagation_setup.dependent_variable.altitude('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.keplerian_state('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.dynamic_pressure('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.latitude('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.longitude('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.heading_angle('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.flight_path_angle('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.total_acceleration_norm('Capsule'),
+                                   propagation_setup.dependent_variable.single_acceleration(propagation_setup.acceleration.aerodynamic_type, 'Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.intermediate_aerodynamic_rotation_matrix_variable('Capsule', 
+                                                                                                                          numerical_simulation.environment.inertial_frame, 
+                                                                                                                          numerical_simulation.environment.aerodynamic_frame,
+                                                                                                                          'Earth'),                                                                                    
+                                   propagation_setup.dependent_variable.single_acceleration(propagation_setup.acceleration.point_mass_gravity_type, 'Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.tnw_to_inertial_rotation_matrix('Capsule', 'Earth'),
+                                   propagation_setup.dependent_variable.airspeed('Capsule', 'Earth')] 
+    
     return dependent_variables_to_save
 
-
 # NOTE TO STUDENTS: THIS FUNCTION SHOULD BE EXTENDED TO USE MORE INTEGRATORS FOR ASSIGNMENT 1.
-def get_integrator_settings(propagator_index: int,
+def get_integrator_settings_old(propagator_index: int,
                             integrator_index: int,
                             settings_index: int,
                             simulation_start_epoch: float) \
@@ -231,6 +247,84 @@ def get_integrator_settings(propagator_index: int,
 
     return integrator_settings
 
+def get_integrator_settings(propagator_settings: tudatpy.numerical_simulation.propagation_setup.integrator.IntegratorSettings,
+                            integrator_index: int,
+                            settings: float,
+                            fixed = False) \
+        -> tudatpy.numerical_simulation.propagation_setup.integrator.IntegratorSettings:
+    """
+    Retrieves the integrator settings.
+
+    Supports 8 integrators:
+    - integrator_index 0 to 3: Variable-step methods:
+        0 -> RKF4(5)
+        1 -> RKF5(6)
+        2 -> RKDP8(7)
+        3 -> RKF12(10)
+    - integrator_index 4 to 7: Fixed-step methods using lower order of the above:
+        4 -> RK4
+        5 -> RK5
+        6 -> RK7
+        7 -> RK10
+
+    settings_index defines:
+        - the tolerance for variable-step methods: 10^(-10 + settings_index)
+        - the fixed step size for fixed-step methods: 2^settings_index [s]
+
+    Parameters
+    ----------
+    propagator_index : int
+        (Unused, reserved for future use)
+    integrator_index : int
+        Index selecting one of the 8 integrators
+    settings: float
+        Tolerance (var-step) or step size (fixed-step)
+    simulation_start_epoch : float
+        Start time of the simulation 
+
+    Returns
+    -------
+    integrator_settings : tudatpy.numerical_simulation.propagation_setup.integrator.IntegratorSettings
+        The integrator settings object.
+    """
+
+    # Define integrator coefficient sets
+    integrator_sets = [
+        propagation_setup.integrator.rkf_45,
+        propagation_setup.integrator.rkf_56,
+        propagation_setup.integrator.rkdp_87,
+        propagation_setup.integrator.rkf_1210
+    ]
+
+    if fixed:
+        # Fixed-step integrator
+        current_coefficient_set = integrator_sets[integrator_index - 4]
+        fixed_step_size = settings
+
+        propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
+            fixed_step_size,
+            coefficient_set=current_coefficient_set,
+            order_to_use=propagation_setup.integrator.lower
+        )
+    else:
+        # Variable-step integrator
+        current_coefficient_set = integrator_sets[integrator_index]
+        current_tolerance = settings
+
+        minimum_step_size = 1.0e-12
+        maximum_step_size = np.inf
+
+        propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_variable_step_size( 
+            1.0,  
+            current_coefficient_set,
+            minimum_step_size,
+            maximum_step_size,
+            current_tolerance,
+            current_tolerance
+        )
+
+    return propagator_settings
+
 
 def get_propagator_settings(shape_parameters,
                             bodies,
@@ -292,7 +386,7 @@ def get_propagator_settings(shape_parameters,
 
 
     # Retrieve initial state
-    initial_state = get_initial_state(simulation_start_epoch,bodies)
+    initial_state = get_initial_state(simulation_start_epoch, bodies)
 
     # Create propagation settings for the translational dynamics. NOTE: these are not yet 'valid', as no
     # integrator settings are defined yet
@@ -305,6 +399,7 @@ def get_propagator_settings(shape_parameters,
                                                                      termination_settings,
                                                                      current_propagator,
                                                                      output_variables=dependent_variables_to_save)
+    
     return propagator_settings
 
 
@@ -509,7 +604,7 @@ def generate_benchmarks(benchmark_step_size,
     # (the minimum and maximum step sizes are set equal, while both tolerances are set to inf)
     benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         first_benchmark_step_size,
-        propagation_setup.integrator.CoefficientSets.rkdp_87)
+        propagation_setup.integrator.CoefficientSets.rkf_56)
     benchmark_propagator_settings.print_settings.print_dependent_variable_indices = True
 
     first_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
@@ -519,7 +614,7 @@ def generate_benchmarks(benchmark_step_size,
     # Create integrator settings for the second benchmark in the same way
     benchmark_propagator_settings.integrator_settings = propagation_setup.integrator.runge_kutta_fixed_step_size(
         second_benchmark_step_size,
-        propagation_setup.integrator.CoefficientSets.rkdp_87)
+        propagation_setup.integrator.CoefficientSets.rkf_56)
     benchmark_propagator_settings.print_settings.print_dependent_variable_indices = False
 
     second_dynamics_simulator = numerical_simulation.create_dynamics_simulator(
@@ -584,7 +679,7 @@ def compare_benchmarks(first_benchmark: dict,
     """
     # Create 8th-order Lagrange interpolator for first benchmark
     benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(
-        first_benchmark, interpolators.lagrange_interpolation(8))
+        first_benchmark, interpolators.lagrange_interpolation(8, boundary_interpolation = interpolators.extrapolate_at_boundary_with_warning) )
     # Initialize difference dictionaries
     benchmark_difference = dict()
     # Calculate the difference between the states and dependent variables in an iterative manner
@@ -596,3 +691,877 @@ def compare_benchmarks(first_benchmark: dict,
         save2txt(benchmark_difference, filename, output_path)
     # Return the interpolator
     return benchmark_difference
+
+
+def compare_benchmarks_no_extrapolation(first_benchmark: dict,
+                       second_benchmark: dict,
+                       output_path: str,
+                       filename: str) -> dict:
+    """
+    It compares the results of two benchmark runs.
+
+    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
+    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
+    filename and placed in the directory output_path.
+
+    Parameters
+    ----------
+    first_benchmark : dict
+        State (or dependent variable history) from the first benchmark.
+    second_benchmark : dict
+        State (or dependent variable history) from the second benchmark.
+    output_path : str
+        If and where to save the benchmark results (if None, results are NOT written).
+    filename : str
+        Name of the output file.
+
+    Returns
+    -------
+    benchmark_difference : dict
+        Interpolated difference between the two benchmarks' state (or dependent variable) history.
+    """
+    # Create 8th-order Lagrange interpolator for first benchmark
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        first_benchmark, interpolators.lagrange_interpolation(8, boundary_interpolation = interpolators.extrapolate_at_boundary_with_warning) )
+    # Initialize difference dictionaries
+    benchmark_difference = dict()
+
+
+    # Calculate the difference between the states and dependent variables in an iterative manner
+    for second_epoch in second_benchmark.keys():
+        if second_epoch <= list(first_benchmark.keys())[-1]:
+            benchmark_difference[second_epoch] = benchmark_interpolator.interpolate(second_epoch) - \
+                                                second_benchmark[second_epoch]
+    # Write results to files
+    if output_path is not None:
+        save2txt(benchmark_difference, filename, output_path)
+    # Return the interpolator
+    return benchmark_difference
+
+
+def evaluate_interpolation(first_benchmark: dict,
+                           second_benchmark: dict) -> dict:
+    """
+    It compares the results of two benchmark runs.
+
+    It uses an 8th-order Lagrange interpolator to compare the state (or the dependent variable, depending on what is
+    given as input) history. The difference is returned in form of a dictionary and, if desired, written to a file named
+    filename and placed in the directory output_path.
+
+    Parameters
+    ----------
+    first_benchmark : dict
+        State (or dependent variable history) from the first benchmark.
+    second_benchmark : dict
+        State (or dependent variable history) from the second benchmark.
+    output_path : str
+        If and where to save the benchmark results (if None, results are NOT written).
+    filename : str
+        Name of the output file.
+
+    Returns
+    -------
+    benchmark_difference : dict
+        Interpolated difference between the two benchmarks' state (or dependent variable) history.
+    """
+    # Create 8th-order Lagrange interpolator for first benchmark
+    benchmark_interpolator = interpolators.create_one_dimensional_vector_interpolator(
+        second_benchmark, interpolators.lagrange_interpolation(8, boundary_interpolation = interpolators.extrapolate_at_boundary_with_warning) )
+    # Initialize difference dictionaries
+    benchmark_difference = dict()
+    # Calculate the difference between the states and dependent variables in an iterative manner
+    for epoch in first_benchmark.keys():
+        benchmark_difference[epoch] = benchmark_interpolator.interpolate(epoch) - \
+                                             first_benchmark[epoch]
+
+    # Return the interpolator max error
+    return benchmark_difference
+
+
+def evaluate_interpolation_error(state_history_difference: dict):
+
+    interpolation_relative_error_1 = dict()
+    interpolation_relative_error_2 = dict()
+
+    # state_history_difference = {t: state for i, (t, state) in enumerate(state_history_difference.items()) if i > 5}
+
+    for i, epoch in enumerate(list(state_history_difference.keys())[1::2]):
+        prev_epoch = list(state_history_difference.keys())[2 * i]
+        next_epoch = list(state_history_difference.keys())[2 * i + 2]
+
+        interpolation_relative_error_1[epoch] = np.linalg.norm(state_history_difference[epoch][:3]) / np.linalg.norm(state_history_difference[prev_epoch][:3])
+        interpolation_relative_error_2[epoch] = - np.linalg.norm(state_history_difference[epoch][:3]) / np.linalg.norm(state_history_difference[next_epoch][:3])
+
+    return (interpolation_relative_error_1, interpolation_relative_error_2)
+
+
+
+
+
+
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+################################################################################################
+
+
+import matplotlib.pyplot as plt
+
+def plot_cowell_state_elements(state_history):
+    """
+    Plots the position components (x, y, z) and velocity components (vx, vy, vz) over time in a 1x2 subplot layout.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the state elements over time. Keys are time, values are [x, y, z, vx, vy, vz].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and state elements
+    time = np.array(list(state_history.keys()))
+    states = np.array(list(state_history.values()))
+    x, y, z, vx, vy, vz = states[:, 0] / 1e3, states[:, 1] / 1e3, states[:, 2] / 1e3, states[:, 3] / 1e3, states[:, 4] / 1e3, states[:, 5] / 1e3
+
+    # Create subplots
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    # Plot position components
+    axes[0].plot(time, x, label='x', linewidth=3)
+    axes[0].plot(time, y, label='y', linewidth=3)
+    axes[0].plot(time, z, label='z', linewidth=3)
+    axes[0].set_xlabel('Time (s)', fontsize=20)
+    axes[0].set_ylabel('Position (km)', fontsize=20)
+    axes[0].tick_params(axis='both', labelsize=18)
+    axes[0].legend(fontsize=18)
+    axes[0].grid()
+
+    # Plot velocity components
+    axes[1].plot(time, vx, label=r'$v_x$', linewidth=3)
+    axes[1].plot(time, vy, label=r'$v_y$', linewidth=3)
+    axes[1].plot(time, vz, label=r'$v_z$', linewidth=3)
+    axes[1].set_xlabel('Time (s)', fontsize=20)
+    axes[1].set_ylabel('Velocity (km/s)', fontsize=20)
+    axes[1].tick_params(axis='both', labelsize=18)
+    axes[1].legend(fontsize=18)
+    axes[1].grid()
+
+    # Adjust layout and show plot
+    plt.tight_layout()
+    plt.show()
+
+def plot_enke_state_elements(state_difference):
+    """
+    Plots the state differences (dx, dy, dz, dvx, dvy, dvz) over time in a 1x2 subplot layout.
+
+    Parameters
+    ----------
+    state_difference : dict
+        Dictionary containing the state differences over time. Keys are time, values are [dx, dy, dz, dvx, dvy, dvz].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and state differences
+    time = np.array(list(state_difference.keys()))
+    differences = np.array(list(state_difference.values()))
+    dx, dy, dz, dvx, dvy, dvz = differences[:, 0] / 1e3, differences[:, 1] / 1e3, differences[:, 2] / 1e3, differences[:, 3] / 1e3, differences[:, 4] / 1e3, differences[:, 5] / 1e3
+
+    # Create subplots
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    # Plot position differences
+    axes[0].plot(time, dx, label=r'$\delta x$', linewidth=3)
+    axes[0].plot(time, dy, label=r'$\delta y$', linewidth=3)
+    axes[0].plot(time, dz, label=r'$\delta z$', linewidth=3)
+    axes[0].set_xlabel('Time (s)', fontsize=20)
+    axes[0].set_ylabel('Position Difference (km)', fontsize=20)
+    axes[0].tick_params(axis='both', labelsize=18)
+    axes[0].legend(fontsize=18)
+    axes[0].grid()
+
+    # Plot velocity differences
+    axes[1].plot(time, dvx, label=r'$\delta v_x$', linewidth=3)
+    axes[1].plot(time, dvy, label=r'$\delta v_y$', linewidth=3)
+    axes[1].plot(time, dvz, label=r'$\delta v_z$', linewidth=3)
+    axes[1].set_xlabel('Time (s)', fontsize=20)
+    axes[1].set_ylabel('Velocity Difference (km/s)', fontsize=20)
+    axes[1].tick_params(axis='both', labelsize=18)
+    axes[1].legend(fontsize=18)
+    axes[1].grid()
+
+    # Adjust layout and show plot
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+def plot_kepler_elements(state_history):
+    """
+    Plots all 6 Kepler elements (a, e, i, RAAN, omega, theta) over time in a 2x3 subplot layout.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the Keplerian elements over time. Keys are time, values are [a, e, i, RAAN, omega, theta].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and Keplerian elements
+    # Filter the state history for time > 1500
+    filtered_state_history = {t: state for t, state in state_history.items() if t > 1550}
+
+    # Extract time and Keplerian elements for the filtered data
+    time = np.array(list(filtered_state_history.keys()))
+    elements = np.array(list(filtered_state_history.values()))
+    a, e, i, RAAN, omega, theta = elements[:, 0], elements[:, 1], np.rad2deg(elements[:, 2]), \
+                                    np.rad2deg(elements[:, 3]), np.rad2deg(elements[:, 4]), np.rad2deg(elements[:, 5])
+
+
+    # Create subplots
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    axes = axes.flatten()
+
+    # Plot each Keplerian element
+    axes[0].plot(time, a, label='a')
+    axes[0].set_title('Semi-major Axis (a) vs Time')
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('a (m)')
+    axes[0].grid()
+
+    axes[1].plot(time, e, label='e')
+    axes[1].set_title('Eccentricity (e) vs Time')
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('e (-)')
+    axes[1].grid()
+
+    axes[2].plot(time, i, label='i')
+    axes[2].set_title('Inclination (i) vs Time')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_ylabel('i (deg)')
+    axes[2].grid()
+
+    axes[3].plot(time, RAAN, label='RAAN')
+    axes[3].set_title('RAAN vs Time')
+    axes[3].set_xlabel('Time (s)')
+    axes[3].set_ylabel('RAAN (deg)')
+    axes[3].grid()
+
+    axes[4].plot(time, omega, label='ω')
+    axes[4].set_title('Argument of Periapsis (ω) vs Time')
+    axes[4].set_xlabel('Time (s)')
+    axes[4].set_ylabel('ω (deg)')
+    axes[4].grid()
+
+    axes[5].plot(time, theta, label='θ')
+    axes[5].set_title('True Anomaly (θ) vs Time')
+    axes[5].set_xlabel('Time (s)')
+    axes[5].set_ylabel('θ (deg)')
+    axes[5].grid()
+
+    # Adjust layout and show plot
+    plt.tight_layout()
+    plt.show()
+
+def plot_gauss_keplerian_elements(state_history):
+    """
+    Plots the Gauss Keplerian elements (e, omega, theta) over time in a single plot with two y-axes.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the Keplerian elements over time. Keys are time, values are [a, e, i, RAAN, omega, theta].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and Keplerian elements
+    time = np.array(list(state_history.keys()))
+    elements = np.array(list(state_history.values()))
+    e, omega, theta = elements[:, 1], np.rad2deg(elements[:, 3]), np.rad2deg(elements[:, 5])
+
+    # Find the time where eccentricity is minimum
+    min_eccentricity_index = np.argmin(e)
+    min_eccentricity_time = time[min_eccentricity_index]
+
+    # Create the plot
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    # Plot eccentricity on the first y-axis
+    ax1.plot(time, e, 'b-', label='Eccentricity (e)', linewidth=3)
+    ax1.set_xlabel('Time [s]', fontsize=25)
+    ax1.set_ylabel('Eccentricity [e]', fontsize=25)
+    ax1.tick_params(axis='y', labelsize=20)
+    ax1.tick_params(axis='x', labelsize=20)
+    ax1.grid()
+
+    # Add a vertical dashed line at the minimum eccentricity
+    ax1.axvline(x=min_eccentricity_time, color='k', linestyle='--', label='Min Eccentricity')
+
+    true_anomaly_derivative = np.diff(theta) / np.diff(time)  # dθ/dt using finite differences
+    true_anomaly_derivative = np.append(true_anomaly_derivative, true_anomaly_derivative[-1])  # Append last value to match array length
+
+    omega_dot = np.diff(omega) / np.diff(time)
+    omega_dot = np.append(omega_dot, omega_dot[-1])
+
+    # Create a second y-axis for omega and theta
+    ax2 = ax1.twinx()
+    ax2.plot(time, omega_dot, color='orange', label='dω/dt', linewidth=3)
+    ax2.plot(time, true_anomaly_derivative, color='green', label='dθ/dt', linewidth=3)
+    ax2.set_ylabel('[deg/s]',  fontsize=25)
+    ax2.tick_params(axis='y', labelsize=20)
+
+    # Combine legends
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=20)
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+def plot_gme_elements(state_history):
+    """
+    Plots the Gauss Modified Equinoctial elements (p, f, g, h, k, L) over time in a 2x3 subplot layout.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the Modified Equinoctial elements over time. Keys are time, values are [p, f, g, h, k, L].
+
+    Returns
+    -------
+    None
+    """
+
+    # Extract time and Modified Equinoctial elements
+    time = np.array(list(state_history.keys()))
+    elements = np.array(list(state_history.values()))
+    f, g, h, k, L = elements[:, 1], elements[:, 2], elements[:, 3], elements[:, 4], elements[:, 5]
+
+    # Create subplots for f, g, h, k, L
+    fig, axes = plt.subplots(1, 4, figsize=(25, 6))
+
+    # Plot f
+    axes[0].plot(time, f, label='f', linewidth=3, color='blue')
+    axes[0].set_xlabel('Time (s)', fontsize=20)
+    axes[0].legend(fontsize=18)
+    axes[0].tick_params(axis='both', labelsize=18)
+    axes[0].grid()
+
+    # Plot g
+    axes[1].plot(time, g, label='g', linewidth=3, color='orange')
+    axes[1].set_xlabel('Time (s)', fontsize=20)
+    axes[1].legend(fontsize=18)
+    axes[1].tick_params(axis='both', labelsize=18)
+    axes[1].grid()
+
+    # Plot h
+    axes[2].plot(time, h, label='h', linewidth=3, color='green')
+    axes[2].set_xlabel('Time (s)', fontsize=20)
+    axes[2].legend(fontsize=18)
+    axes[2].tick_params(axis='both', labelsize=18)
+    axes[2].grid()
+
+    # Plot k
+    axes[3].plot(time, k, label='k', linewidth=3, color='red')
+    axes[3].set_xlabel('Time (s)', fontsize=20)
+    axes[3].legend(fontsize=18)
+    axes[3].tick_params(axis='both', labelsize=18)
+    axes[3].grid()
+
+    # Adjust layout and show the figure
+    plt.show()
+
+def plot_usm_quaternions_elements(state_history):
+    """
+    Plots the USM-Quaternions elements (C, Rf1, Rf2, ε1, ε2, ε3, η) over time in a 2x4 subplot layout.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the USM-Quaternions elements over time. Keys are time, values are [C, Rf1, Rf2, ε1, ε2, ε3, η].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and USM-Quaternions elements
+    time = np.array(list(state_history.keys()))
+    elements = np.array(list(state_history.values()))
+    C, Rf1, Rf2, epsilon_1, epsilon_2, epsilon_3, eta = elements[:, 0], elements[:, 1], elements[:, 2], elements[:, 3], elements[:, 4], elements[:, 5], elements[:, 6]
+
+
+    # Create a single plot for C, Rf1, and Rf2
+    plt.figure(figsize=(10, 6))
+    plt.plot(time, C, label='C', color='blue', linewidth=3)
+    plt.plot(time, Rf1, label='Rf1', color='orange', linewidth=3, linestyle='--')
+    plt.plot(time, Rf2, label='Rf2', color='green', linewidth=3, linestyle='-.')
+    plt.xlabel('Time (s)', fontsize=20)
+    plt.ylabel('(m/s)', fontsize=20)
+    plt.legend(fontsize=18)
+    plt.tick_params(axis='both', labelsize=18)
+    plt.grid()
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_usm_mrp_elements(state_history):
+    """
+    Plots the USM-MRP elements (C, Rf1, Rf2, σ1, σ2, σ3, S) over time in a 2x4 subplot layout.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the USM-MRP elements over time. Keys are time, values are [C, Rf1, Rf2, σ1, σ2, σ3, S].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and USM-MRP elements
+    time = np.array(list(state_history.keys()))
+    elements = np.array(list(state_history.values()))
+    C, Rf1, Rf2, sigma_1, sigma_2, sigma_3, S = elements[:, 0], elements[:, 1], elements[:, 2], elements[:, 3], elements[:, 4], elements[:, 5], elements[:, 6]
+
+    # Create subplots
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes = axes.flatten()
+
+    # Plot each USM-MRP element
+    axes[0].plot(time, C, label='C')
+    axes[0].set_title('C vs Time')
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('C (m/s)')
+    axes[0].grid()
+
+    axes[1].plot(time, Rf1, label='Rf1')
+    axes[1].set_title('Rf1 vs Time')
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('Rf1 (m/s)')
+    axes[1].grid()
+
+    axes[2].plot(time, Rf2, label='Rf2')
+    axes[2].set_title('Rf2 vs Time')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_ylabel('Rf2 (m/s)')
+    axes[2].grid()
+
+    axes[3].plot(time, sigma_1, label='σ1')
+    axes[3].set_title('σ1 vs Time')
+    axes[3].set_xlabel('Time (s)')
+    axes[3].set_ylabel('σ1 (-)')
+    axes[3].grid()
+
+    axes[4].plot(time, sigma_2, label='σ2')
+    axes[4].set_title('σ2 vs Time')
+    axes[4].set_xlabel('Time (s)')
+    axes[4].set_ylabel('σ2 (-)')
+    axes[4].grid()
+
+    axes[5].plot(time, sigma_3, label='σ3')
+    axes[5].set_title('σ3 vs Time')
+    axes[5].set_xlabel('Time (s)')
+    axes[5].set_ylabel('σ3 (-)')
+    axes[5].grid()
+
+    axes[6].plot(time, S, label='S')
+    axes[6].set_title('S vs Time')
+    axes[6].set_xlabel('Time (s)')
+    axes[6].set_ylabel('S (-)')
+    axes[6].grid()
+
+    # Hide the last subplot (empty)
+    axes[7].axis('off')
+
+    # Adjust layout and show plot
+    plt.tight_layout()
+    plt.show()
+
+def plot_usmem_elements(state_history):
+    """
+    Plots the USM-Exponential Map elements (C, Rf1, Rf2, a1, a2, a3, a^S) over time in a 2x4 subplot layout.
+
+    Parameters
+    ----------
+    state_history : dict
+        Dictionary containing the USM-Exponential Map elements over time. Keys are time, values are [C, Rf1, Rf2, a1, a2, a3, a^S].
+
+    Returns
+    -------
+    None
+    """
+    # Extract time and USM-Exponential Map elements
+    time = np.array(list(state_history.keys()))
+    elements = np.array(list(state_history.values()))
+    C, Rf1, Rf2, a1, a2, a3, a_shadow = elements[:, 0], elements[:, 1], elements[:, 2], elements[:, 3], elements[:, 4], elements[:, 5], elements[:, 6]
+
+    # Create subplots
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes = axes.flatten()
+
+    # Plot each USM-Exponential Map element
+    axes[0].plot(time, C, label='C')
+    axes[0].set_title('C vs Time')
+    axes[0].set_xlabel('Time (s)')
+    axes[0].set_ylabel('C (m/s)')
+    axes[0].grid()
+
+    axes[1].plot(time, Rf1, label='Rf1')
+    axes[1].set_title('Rf1 vs Time')
+    axes[1].set_xlabel('Time (s)')
+    axes[1].set_ylabel('Rf1 (m/s)')
+    axes[1].grid()
+
+    axes[2].plot(time, Rf2, label='Rf2')
+    axes[2].set_title('Rf2 vs Time')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].set_ylabel('Rf2 (m/s)')
+    axes[2].grid()
+
+    axes[3].plot(time, a1, label='a1')
+    axes[3].set_title('a1 vs Time')
+    axes[3].set_xlabel('Time (s)')
+    axes[3].set_ylabel('a1 (-)')
+    axes[3].grid()
+
+    axes[4].plot(time, a2, label='a2')
+    axes[4].set_title('a2 vs Time')
+    axes[4].set_xlabel('Time (s)')
+    axes[4].set_ylabel('a2 (-)')
+    axes[4].grid()
+
+    axes[5].plot(time, a3, label='a3')
+    axes[5].set_title('a3 vs Time')
+    axes[5].set_xlabel('Time (s)')
+    axes[5].set_ylabel('a3 (-)')
+    axes[5].grid()
+
+    axes[6].plot(time, a_shadow, label='a^S')
+    axes[6].set_title('S vs Time')
+    axes[6].set_xlabel('Time (s)')
+    axes[6].set_ylabel('S (-)')
+    axes[6].grid()
+
+    # Hide the last subplot (empty)
+    axes[7].axis('off')
+
+    # Adjust layout and show plot
+    plt.tight_layout()
+    plt.show()
+
+
+
+#############################################################################################
+#############################################################################################
+
+def save_dependent_variables_to_dict(dependent_variables_history):
+
+    
+
+    time = list(dependent_variables_history.keys())
+
+    dependent_variable_dict = {
+        "mach_number": {},
+        "altitude": {},
+        "kepler_elements": {},
+        "dynamic_pressure": {},
+        "latitude_angle": {},
+        "longitude_angle": {},
+        "heading_angle": {},
+        "flight_path_angle": {},
+        "total_acceleration_norm": {},
+        "aerodynamic_acceleration": {},
+        "aero_rotation_matrix": {},
+        "point_mass_acceleration": {},
+        "rws_rotation_matrix": {},
+        "airspeed": {}
+    }
+
+    for t, values in dependent_variables_history.items():
+
+        dependent_variable_dict["mach_number"][t] = values[0]
+        dependent_variable_dict["altitude"][t] = values[1]
+        dependent_variable_dict["kepler_elements"][t] = values[2:8]
+        dependent_variable_dict["dynamic_pressure"][t] = values[8]
+        dependent_variable_dict["latitude_angle"][t] = values[9]
+        dependent_variable_dict["longitude_angle"][t] = values[10]
+        dependent_variable_dict["heading_angle"][t] = values[11]
+        dependent_variable_dict["flight_path_angle"][t] = values[12]
+        dependent_variable_dict["total_acceleration_norm"][t] = values[13]
+        dependent_variable_dict["aerodynamic_acceleration"][t] = values[14:17]
+        dependent_variable_dict["aero_rotation_matrix"][t] = values[17:26]
+        dependent_variable_dict["point_mass_acceleration"][t] = values[26:29]
+        dependent_variable_dict["rws_rotation_matrix"][t] = values[29:38]
+        dependent_variable_dict["airspeed"][t] = values[38]
+
+    return dependent_variable_dict
+
+
+# Plot Kepler elements
+
+def plot_dependent_variables(dependent_variable_data):
+
+    plt.figure(figsize=(12, 8))
+    time = list(dependent_variable_data['kepler_elements'].keys())
+    # Check if all required keys exist in the dictionary
+    required_keys = ["kepler_elements", "mach_number", "altitude", "latitude_angle", "longitude_angle", 
+                     "heading_angle", "flight_path_angle", "total_acceleration_norm", 
+                     "aerodynamic_acceleration", "aero_rotation_matrix","point_mass_acceleration", "rws_rotation_matrix"]
+    for key in required_keys:
+        print(key)
+        if key not in dependent_variable_data:
+            raise KeyError(f"Missing key in dependent_variable_data: {key}")
+
+    kepler_elements = np.array([dependent_variable_data["kepler_elements"][t] for t in time])
+    mach_numbers = np.array([dependent_variable_data["mach_number"][t] for t in time])
+    altitudes = np.array([dependent_variable_data["altitude"][t] for t in time])
+    latitude_angles = np.array([dependent_variable_data["latitude_angle"][t] for t in time])
+    longitude_angles = np.array([dependent_variable_data["longitude_angle"][t] for t in time])
+    heading_angles = np.array([dependent_variable_data["heading_angle"][t] for t in time])
+    flight_path_angles = np.array([dependent_variable_data["flight_path_angle"][t] for t in time])
+    total_acceleration_norms = np.array([dependent_variable_data["total_acceleration_norm"][t] for t in time])
+    aerodynamic_accelerations = np.array([dependent_variable_data["aerodynamic_acceleration"][t] for t in time])
+    rotation_matrices = np.array([dependent_variable_data["aero_rotation_matrix"][t] for t in time])
+    point_mass_accelerations = np.array([dependent_variable_data["point_mass_acceleration"][t] for t in time])
+    rws_rotation_matrices = np.array([dependent_variable_data["rws_rotation_matrix"][t] for t in time])
+    airspeed = np.array([dependent_variable_data["airspeed"][t] for t in time])
+
+    time = np.array(time)
+    kepler_labels = ['Semi-major axis [m]', 'Eccentricity [-]', 'Inclination [rad]', 
+                    'Argument of Periapsis [rad]', 'RAAN [rad]', 'True Anomaly [rad]']
+
+    for i in range(6):
+        plt.subplot(3, 2, i + 1)
+        if i == 5:
+            # Find the index of the minimum true anomaly
+            true_anomaly = kepler_elements[:, 5]
+            min_true_anomaly_index = np.argmin(true_anomaly)
+            # Adjust true anomaly by adding 2π from the minimum index onwards
+            true_anomaly[min_true_anomaly_index:] += 2 * np.pi
+            plt.plot(time, true_anomaly, label=kepler_labels[i])
+        else:
+            plt.plot(time, kepler_elements[:, i], label=kepler_labels[i])
+            plt.xlabel('Time [s]', fontsize=12)
+            plt.ylabel(kepler_labels[i], fontsize=12)
+            plt.grid()
+            plt.tight_layout()
+
+    plt.suptitle('Kepler Elements', fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+    # Create a single figure with 1 row and 3 columns for the plots
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    # Plot Mach number vs Altitude
+    ax1 = axes[0]
+    ax2 = ax1.twiny()  # Create a second x-axis sharing the same y-axis
+    ax1.plot(mach_numbers, altitudes * 1e-3, label='Mach', color='blue', linewidth=2.5)
+    ax1.set_xlabel('Mach Number [-]', fontsize=20)
+    ax1.set_ylabel('Altitude [km]', fontsize=20)
+    ax1.tick_params(axis='both', labelsize=18)
+    ax1.xaxis.set_major_locator(plt.MultipleLocator(3))
+    ax1.grid()
+    ax2.plot(airspeed * 1e-3, altitudes * 1e-3, label='Airspeed', color='red', linewidth=2.5)  # Invisible plot for scaling
+    ax2.set_xlabel('Airspeed [km/s]', fontsize=20)
+    ax2.tick_params(axis='x', labelsize=18)
+    # Add legend
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='center left', fontsize=16)
+
+    # Plot altitude vs flight path angle
+    ax1 = axes[1]
+    ax2 = ax1.twiny()  # Create a second x-axis sharing the same y-axis
+    ax1.plot(flight_path_angles * 180/np.pi, altitudes * 1e-3, label='Flight Path Angle', color='green', linewidth=2.5)
+    ax1.set_xlabel('Flight Path Angle [deg]', fontsize=20)
+    ax1.tick_params(axis='both', labelsize=18)
+    ax1.grid()
+    ax2.plot(kepler_elements[:, 1], altitudes * 1e-3, label='Eccentricity', color='orange', linewidth=2.5)  # Invisible plot for scaling
+    ax2.set_xlabel('Eccentricity [-]', fontsize=20)
+    ax2.tick_params(axis='x', labelsize=18)
+    # Add legend
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, fontsize=16, loc='upper center')
+
+    # Plot aerodynamic acceleration norm as a function of altitude
+    g = 9.81  # Gravitational acceleration [m/s²]
+    axes[2].plot(total_acceleration_norms / g, altitudes * 1e-3, label='Total Acceleration [g]', linewidth=2.5)
+    axes[2].set_xlabel('Acceleration [g]', fontsize=20)
+    axes[2].tick_params(axis='both', labelsize=18)
+    axes[2].grid()
+
+    aero_acceleration_rsw_frame = []
+    for i, (aero_acceleration, point_mass_acceleration) in enumerate(zip(aerodynamic_accelerations, point_mass_accelerations)):
+        rsw_rotation_matrix = np.array(rws_rotation_matrices[i]).reshape(3, 3)
+        aero_acceleration_rsw = np.dot(rsw_rotation_matrix.T, aero_acceleration)
+        aero_acceleration_rsw_frame.append(aero_acceleration_rsw)
+
+    aero_acceleration_rsw_frame = np.array(aero_acceleration_rsw_frame)
+
+    # Plot aerodynamic acceleration components in the trajectory frame
+    axes[2].plot(np.abs(aero_acceleration_rsw_frame[:, 0]) / g, altitudes * 1e-3, label='Along-track [g]', linestyle='-', linewidth=2)
+    axes[2].plot(np.abs(aero_acceleration_rsw_frame[:, 1]) / g, altitudes * 1e-3, label='Radial [g]', linestyle='-', linewidth=2)
+    axes[2].plot(np.abs(aero_acceleration_rsw_frame[:, 2]) / g, altitudes * 1e-3, label='Cross-track [g]', linestyle='-', linewidth=2)
+    axes[2].legend(fontsize=16)
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+    # Compute angular momentum and derivative of true anomaly
+    angular_momentum = np.array([np.sqrt(a * (1 - e**2)) for a, e in zip(kepler_elements[:, 0], kepler_elements[:, 1])])  # h = sqrt(a * (1 - e^2))
+    
+    # Create the plot
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+
+    # Plot angular momentum on the first y-axis
+    ax1.plot(time, angular_momentum, 'b-', label=r'Semilatus Rectus (h/$\mu^2$)', linewidth=2)
+    ax1.set_xlabel('Time [s]', fontsize=20)
+    ax1.set_ylabel('p [m]', color='b', fontsize=20)
+    ax1.tick_params(axis='y', labelcolor='b', labelsize=18)
+    ax1.tick_params(axis='x', labelsize=18)
+    ax1.grid()
+
+    # Create a second y-axis for the derivative of the true anomaly
+    ax2 = ax1.twinx()
+    ax2.plot(time, true_anomaly, 'r', label='θ', linewidth=2)
+    ax2.set_ylabel('θ [rad]', color='r', fontsize=20)
+    ax2.tick_params(axis='y', labelcolor='r', labelsize=18)
+
+    # Combine legends
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc='center left', fontsize=18)
+
+    # Show the plot
+    plt.tight_layout()
+    plt.show()
+
+    # Adjust layout and show the figure
+    plt.tight_layout()
+    plt.show()
+
+    # Plot altitude, latitude, longitude, Mach, heading, and flight path angle
+    plt.figure(figsize=(12, 8))
+
+    # Top 3 plots
+    plt.subplot(2, 3, 1)
+    plt.plot(time, altitudes, label='Altitude [m]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Altitude [m]', fontsize=12)
+    plt.grid()
+
+    plt.subplot(2, 3, 2)
+    plt.plot(time, latitude_angles, label='Latitude [rad]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Latitude [rad]', fontsize=12)
+    plt.grid()
+
+    plt.subplot(2, 3, 3)
+    plt.plot(time, longitude_angles, label='Longitude [rad]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Longitude [rad]', fontsize=12)
+    plt.grid()
+
+    # Bottom 3 plots
+    plt.subplot(2, 3, 4)
+    plt.plot(time, mach_numbers, label='Mach Number [-]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Mach Number [-]', fontsize=12)
+    plt.grid()
+
+    plt.subplot(2, 3, 5)
+    plt.plot(time, heading_angles, label='Heading Angle [rad]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Heading Angle [rad]', fontsize=12)
+    plt.grid()
+
+    plt.subplot(2, 3, 6)
+    plt.plot(time, flight_path_angles, label='Flight Path Angle [rad]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Flight Path Angle [rad]', fontsize=12)
+    plt.grid()
+
+    plt.suptitle('Altitude, Latitude, Longitude, Mach, Heading, Flight Path Angle', fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+    
+
+    # Compute aerodynamic acceleration components in the trajectory frame
+    aero_acceleration_trajectory_frame = []
+
+    for i, aero_acceleration in enumerate(aerodynamic_accelerations):
+        rotation_matrix = np.array(rotation_matrices[i]).reshape(3, 3)
+        trajectory_frame_acceleration = np.dot(rotation_matrix, aero_acceleration)
+        aero_acceleration_trajectory_frame.append(trajectory_frame_acceleration)
+
+    aero_acceleration_trajectory_frame = np.array(aero_acceleration_trajectory_frame)
+
+    # Plot aerodynamic acceleration components in the trajectory frame
+    plt.figure(figsize=(10, 6))
+    plt.plot(time, np.abs(aero_acceleration_trajectory_frame[:, 0]), label='Drag [m/s²]')
+    plt.plot(time, np.abs(aero_acceleration_trajectory_frame[:, 1]), label='Side [m/s²]')
+    plt.plot(time, np.abs(aero_acceleration_trajectory_frame[:, 2]), label='Lift [m/s²]')
+    plt.xlabel('Time [s]', fontsize=12)
+    plt.ylabel('Aerodynamic Acceleration [m/s²]', fontsize=12)
+    plt.yscale('log')
+    plt.title('Aerodynamic Acceleration Components in Trajectory Frame', fontsize=16)
+    plt.legend(fontsize=12)
+    plt.grid()
+    plt.show()
+    
+
+    # Compute aerodynamic and point mass acceleration components in the RSW frame
+    aero_acceleration_rsw_frame = []
+    point_mass_acceleration_rsw_frame = []
+
+    for i, (aero_acceleration, point_mass_acceleration) in enumerate(zip(aerodynamic_accelerations, point_mass_accelerations)):
+        rsw_rotation_matrix = np.array(rws_rotation_matrices[i]).reshape(3, 3)
+        aero_acceleration_rsw = np.dot(rsw_rotation_matrix.T, aero_acceleration)
+        point_mass_acceleration_rsw = np.dot(rsw_rotation_matrix.T, point_mass_acceleration)
+        aero_acceleration_rsw_frame.append(aero_acceleration_rsw)
+        point_mass_acceleration_rsw_frame.append(point_mass_acceleration_rsw)
+
+    aero_acceleration_rsw_frame = np.array(aero_acceleration_rsw_frame)
+    point_mass_acceleration_rsw_frame = np.array(point_mass_acceleration_rsw_frame)
+
+    # Create a figure with two subplots
+    fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+
+    # Plot aerodynamic acceleration components in the RSW frame
+    axes[0].plot(time, aero_acceleration_rsw_frame[:, 1], label='Along-track [m/s²]', linewidth=2)
+    axes[0].plot(time, aero_acceleration_rsw_frame[:, 0], label='Radial [m/s²]', linewidth=2)
+    axes[0].plot(time, aero_acceleration_rsw_frame[:, 2], label='Cross-track [m/s²]', linewidth=2)
+    axes[0].set_title('Aerodynamic Acceleration in RSW Frame', fontsize=16)
+    axes[0].set_xlabel('Time [s]', fontsize=14)
+    axes[0].set_ylabel('Acceleration [m/s²]', fontsize=14)
+    axes[0].legend(fontsize=12)
+    axes[0].grid()
+
+    # Plot point mass acceleration components in the RSW frame
+    axes[1].plot(time, point_mass_acceleration_rsw_frame[:, 1], label='Along-track [m/s²]', linewidth=2)
+    axes[1].plot(time, point_mass_acceleration_rsw_frame[:, 0], label='Radial [m/s²]', linewidth=2)
+    axes[1].plot(time, point_mass_acceleration_rsw_frame[:, 2], label='Cross-track [m/s²]', linewidth=2)
+    axes[1].set_title('Point Mass Acceleration in RSW Frame', fontsize=16)
+    axes[1].set_xlabel('Time [s]', fontsize=14)
+    axes[1].set_ylabel('Acceleration [m/s²]', fontsize=14)
+    axes[1].legend(fontsize=12)
+    axes[1].grid()
+
+    # Adjust layout and show the figure
+    plt.tight_layout()
+    plt.show()
